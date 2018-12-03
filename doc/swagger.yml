@@ -1,0 +1,100 @@
+swagger: "2.0"
+info:
+  version: 1.0.0
+  title: Geppytto API
+  license:
+    name: MIT
+
+basePath: /v1
+schemes:
+  - http
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /new_browser/:
+    get:
+      summary: Get a new DevProtocol websocket address
+      description: This endpoint will return a DevProtocol websocket address. You can provide **browser_name** param to get a named browser, if the named browser already exist, a ws address to that exist browser will be returned, otherwise, a new named browser will be created and its' ws address will be returned, if you don't provide browser_name, then a temporary browser will be created. the temporary browser's user data will be removed after the session, while a named browser's user data will be kept. You can also provide a **node_name** param to select on which node the new browser should be created, if you don't provide taht, a random node will be selected. Note that, if a named browser is found, the node_name param will be ignored. 
+      parameters:
+        - $ref: '#/parameters/browser_name_in_query'
+        - $ref: '#/parameters/node_name_in_query'
+            
+      responses:
+        200:
+          description: return info on how to connect to the browser allocated to you
+          schema:
+            required: [doc_id, node_name]
+            properties:
+              ws_addr:
+                type: string
+              node_name:
+                type: string
+                
+        default:
+          description: Unexpected Error
+          schema:
+            $ref: '#/definitions/Error'
+
+  /node/:
+    get:
+      summary: Get node list in this cluster
+
+    put:
+      summary: Add a new node to the cluster
+      parameters:
+        - $ref: '#/parameters/node_name_in_query'
+        - $ref: '#/parameters/advertise_address_in_query'
+
+    delete:
+      summary: Delete a node from the cluster
+
+            
+      
+parameters:
+  browser_name_in_query:
+    description: The browser name.
+    name: browser_name
+    in: query
+    type: string
+
+  node_name_in_query:
+    description: The node on which to create the new browser
+    name: node_name
+    in: query
+    type: string
+
+  advertise_address_in_query:
+    description: The address that other node can communicate with this node
+    name: advertise_address
+    in: query
+    type: string
+
+  max_browser_count_in_query:
+    description: The max number of browser process this node can run
+    name: max_browser_count
+    in: query
+    type: integer
+
+  max_browser_context_count_in_query:
+    description: The max number of browser context that a single browser process on this node can create
+    name: max_browser_context_count
+    in: query
+    type: integer
+
+definitions:
+  Error:
+    properties:
+      error_code:
+        type: integer
+        enum:
+          - 1    # Unknown error
+          - 2    # Node full
+        description: test
+      message:
+        type: string
+      text:
+        type: string
+      status:
+        type: string
