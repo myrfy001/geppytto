@@ -28,7 +28,15 @@ class VirtualBrowserManager:
         if virt_browser_id in self.virt_browser_ids:
             await client_ws.close(reason='Dup browser_id')
             return
-        if node_name is None:
+        if browser_name is None:
+            await self.handle_free_browser(
+                node_name=node_name, client_ws=client_ws)
+
+        else:
+            pass
+
+    async def handle_free_browser(self, node_name: str, client_ws):
+        while 1:
             context_info = await self.storage.get_free_browser_context(
                 node_name=node_name)
             if context_info is None:
@@ -37,17 +45,20 @@ class VirtualBrowserManager:
 
             print(
                 f'Geppytto trying to connect agent {context_info.agent_url}')
+            try:
+                browser_ws = await asyncio.wait_for(
+                    websockets.connect(context_info.agent_url), 2)
+                break
+            except:
+                print(f'Connect agent {context_info.agent_url} Timeout')
+                continue
 
-            browser_ws = await websockets.connect(context_info.agent_url)
-            protocol_handler = ProtocolHandler(
-                client_ws, browser_ws,
-                target_contextid=context_info.context_id)
-            proxy_worker = ProxyWorker(
-                self, client_ws, browser_ws, context_info, protocol_handler)
-            await proxy_worker.run()
-
-        else:
-            pass
+        protocol_handler = ProtocolHandler(
+            client_ws, browser_ws,
+            target_contextid=context_info.context_id)
+        proxy_worker = ProxyWorker(
+            self, client_ws, browser_ws, context_info, protocol_handler)
+        await proxy_worker.run()
 
 
 class ProxyWorker:

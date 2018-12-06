@@ -4,6 +4,9 @@ import subprocess
 import asyncio
 import sys
 from os.path import abspath, dirname, join
+import atexit
+
+started_agents = []
 
 
 def start_new_agent(cli_args: dict):
@@ -14,4 +17,11 @@ def start_new_agent(cli_args: dict):
             str(cli_args.max_browser_context_count)]
     if hasattr(cli_args, 'user_data_dir'):
         args.extend(['--user-data-dir', cli_args.user_data_dir])
-    subprocess.Popen(args)
+    r = subprocess.Popen(args)
+    started_agents.append(r)
+
+
+@atexit.register
+def close_all_agents():
+    for p in started_agents:
+        p.terminate()

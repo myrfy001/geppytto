@@ -3,6 +3,7 @@
 from typing import Callable
 import asyncio
 import json
+import time
 
 import websockets
 import sanic
@@ -18,14 +19,17 @@ class DevProtocolProxy:
         self.context_mgr = agent.context_mgr
         self.running = False
         self.server_app = sanic.Sanic()
+        self.connection_count = 0
+        self.last_connection_close_time = time.time()
 
     async def _websocket_connection_handler(
             self, request, client_ws, real_browser_id):
-        print('new agent connection')
-        browser_ws = await websockets.connect(self.url)
-        relay_worker = RelayWorker(client_ws, browser_ws)
-        await relay_worker.run()
         try:
+            self.connection_count += 1
+            print('new agent connection')
+            browser_ws = await websockets.connect(self.url)
+            relay_worker = RelayWorker(client_ws, browser_ws)
+            await relay_worker.run()
             print('agent connection closeing')
             await self.context_mgr.close_context_by_id(relay_worker.context_id)
             await self.context_mgr.add_new_browser_context_to_pool()
@@ -33,11 +37,12 @@ class DevProtocolProxy:
         except:
             import traceback
             traceback.print_exc()
+        finally:
+            self.connection_count -= 1
+            self.last_connection_close_time = time.time()
 
     async def _check_id_handler(self, request):
-        context_id = request.raw_args['context_id']
-        return json_resp(
-            {'isfree': self.context_mgr.is_free_context(context_id)})
+        pass
 
     async def run(self):
         self.server_app.add_websocket_route(

@@ -12,8 +12,6 @@ class NodeInfo:
     # This value will be copied to RealBrowserInfo when new process created
     max_browser_context_count: Optional[int]
     current_browser_count: Optional[int]
-    # How many times that a connection fail occur
-    fail_counter: Optional[int]
 
 
 @dataclass
@@ -27,8 +25,6 @@ class RealBrowserInfo:
     # different process on ther same node have different browser context limit
     max_browser_context_count: Optional[int]
     current_context_count: Optional[int]
-    # How many times that a connection fail occur
-    fail_counter: Optional[int]
     node_info: Optional[NodeInfo]
 
 

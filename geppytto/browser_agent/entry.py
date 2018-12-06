@@ -24,5 +24,6 @@ if __name__ == '__main__':
     subprocess_main = importlib.import_module(
         'geppytto.browser_agent.service').subprocess_main
     loop = asyncio.get_event_loop()
+
     loop.run_until_complete(subprocess_main(args))
     print('Browser proxy is exiting')

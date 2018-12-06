@@ -7,12 +7,11 @@ import json
 
 from geppytto.models import RealBrowserInfo, NodeInfo, RealBrowserContextInfo
 
-REDIS_TTL = 30*60
-
 
 REAL_BROWSER_INFO_LIST_KEY_NAME = 'real_browser_info_keys'
 NODE_INFO_LIST_KEY_NAME = 'node_info_keys'
 FREE_BROWSER_CONTEXT_SET = 'free_browser_context_set'
+NAMED_BROWSER_HASH_KEY_NAME = 'named_browsers'
 
 
 class BaseStorageAccrssor:
@@ -20,34 +19,29 @@ class BaseStorageAccrssor:
 
 
 class RedisStorageAccessor(BaseStorageAccrssor):
-    lua_script_inc_dec_hash_field_in_range = '''
-            new_val = redis.call('hincrby', KEYS[1], ARGV[1])
-            if (new_val < ARGV[2] OR new_val > ARGV[3]) then
-                redis.call('hincrby', KEYS[1], -ARGV[1])
-                return nil
-            end
-            return new_val
-        '''
-
     def __init__(self, host, port):
         self.client = StrictRedis(host=host, port=port, decode_responses=True)
-        self.redis_script_inc_dec_hash_field_in_range = (
-            self.client.register_script(
-                self.lua_script_inc_dec_hash_field_in_range))
 
     async def register_real_browser(self, browser: RealBrowserInfo):
 
-        # save browser info and set a timeout
+        # save browser info
         node_name = browser.node_info.node_name
         real_browser_info_key_name = (
             f'real_browser_info:{node_name}:{browser.browser_id}')
         data = dc.asdict(browser)
         data['node_info'] = json.dumps(data['node_info'])
         await self.client.hmset(real_browser_info_key_name, data)
-        await self.client.expire(real_browser_info_key_name, REDIS_TTL)
 
         # add the above key name to a set so we can get all keys' name
         await self.client.sadd(
+            REAL_BROWSER_INFO_LIST_KEY_NAME, real_browser_info_key_name)
+
+    async def remove_real_browser(self, browser: RealBrowserInfo):
+        node_name = browser.node_info.node_name
+        real_browser_info_key_name = (
+            f'real_browser_info:{node_name}:{browser.browser_id}')
+        await self.client.delete(real_browser_info_key_name)
+        await self.client.srem(
             REAL_BROWSER_INFO_LIST_KEY_NAME, real_browser_info_key_name)
 
     async def _get_real_browser_keys(
@@ -80,11 +74,8 @@ class RedisStorageAccessor(BaseStorageAccrssor):
         '''
 
         selected_browsers = await self._get_real_browser_keys(node, browser_id)
-        ret, missing_keys = await self._fetch_redis_keys_and_update_ttl(
+        ret = await self._fetch_redis_hashes(
             keys=selected_browsers, fields=fields)
-        if missing_keys:
-            await self.client.srem(
-                REAL_BROWSER_INFO_LIST_KEY_NAME, *missing_keys)
 
         ret_ = []
         for r in ret_:
@@ -92,7 +83,7 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             ret_.append(RealBrowserInfo(**r))
         return ret
 
-    async def _fetch_redis_keys_and_update_ttl(
+    async def _fetch_redis_hashes(
             self, keys: List[str], fields: Optional[List[str]] = None,
     ) -> (List, List):
 
@@ -102,15 +93,11 @@ class RedisStorageAccessor(BaseStorageAccrssor):
                     await pipe.hgetall(key)
                 else:
                     await pipe.hmget(key, fields)
-                # Note: Should refresh TTL
-                await pipe.expire(key, REDIS_TTL)
-                pipe_rets = await pipe.execute()
+            pipe_rets = await pipe.execute()
 
             ret = []
-            missing_keys = []
             for idx, pipe_ret in enumerate(pipe_rets[::2]):
                 if pipe_ret is None:
-                    missing_keys.append(keys[idx*2])
                     continue
                 if fields is None:
                     # hgetall returns a dict
@@ -119,13 +106,12 @@ class RedisStorageAccessor(BaseStorageAccrssor):
                     # hmget returns a tuple
                     tmp_dict = dict(zip(fields, pipe_ret))
                     ret.append(tmp_dict)
-        return ret, missing_keys
+        return ret
 
     async def register_node(self, node: NodeInfo):
-        # save node info and set a timeout
+        # save node info
         node_info_key_name = f'node_info:{node.node_name}'
         await self.client.hmset(node_info_key_name, dc.asdict(node))
-        await self.client.expire(node_info_key_name, REDIS_TTL)
 
         # add the above key name to a set so we can get all keys' name
         await self.client.sadd(
@@ -133,36 +119,9 @@ class RedisStorageAccessor(BaseStorageAccrssor):
 
     async def get_node_info(
             self, node: str, fields: Optional[List[str]] = None):
-        ret, missing_keys = await self._fetch_redis_keys_and_update_ttl(
+        ret = await self._fetch_redis_hashes(
             keys=[f'node_info:{node}'], fields=fields)
-        if missing_keys:
-            await self.client.srem(NODE_INFO_LIST_KEY_NAME, *missing_keys)
         return NodeInfo(**ret[0])
-
-    def _inc_dec_hash_field_in_range(
-            self, key: str, field: str, delta: int, min_: int,
-            max_: int)-> Union[int, None]:
-        '''
-        Increase or Decrease a field in redis and check if changed value is 
-        within a range. If in range, the changed value will be returned, 
-        otherwise, no modify will be performed and None will be returned
-        '''
-        return self.redis_script_inc_dec_hash_field_in_range.execute(
-            keys=[key], args=[field, min_, max_])
-
-    def change_real_browser_conetxt_counter(
-            self, browser: RealBrowserInfo, delat: int):
-        node_name = browser.node_info.node_name
-        key = f'real_browser_info:{node_name}:{browser.browser_id}'
-        return self._inc_dec_hash_field_in_range(
-            key, 'current_context_count', delat, 0,
-            browser.max_browser_context_count)
-
-    def change_node_browser_counter(self, node: NodeInfo, delat: int):
-        key = f'node_info:{node.node_name}'
-        return self._inc_dec_hash_field_in_range(
-            key, 'current_browser_count', delat, 0,
-            node.max_browser_context_count)
 
     async def add_free_browser_context(self, rbci: RealBrowserContextInfo):
         item = (
@@ -170,6 +129,13 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             f'{rbci.browser_id}:{rbci.agent_url}')
 
         await self.client.sadd(FREE_BROWSER_CONTEXT_SET, item)
+
+    async def remove_free_browser_context(self, rbci: RealBrowserContextInfo):
+        item = (
+            f'{rbci.node_name}:{rbci.context_id}:'
+            f'{rbci.browser_id}:{rbci.agent_url}')
+
+        await self.client.srem(FREE_BROWSER_CONTEXT_SET, item)
 
     async def get_free_browser_context(self, node_name: Optional[str] = None):
         if node_name is None:
@@ -196,3 +162,7 @@ class RedisStorageAccessor(BaseStorageAccrssor):
         return RealBrowserContextInfo(
             node_name=node_name, context_id=context_id, browser_id=browser_id,
             agent_url=agent_url)
+
+    async def register_named_browser(self, browser_name, node_name):
+        await self.client.hset(
+            NAMED_BROWSER_HASH_KEY_NAME, browser_name, node_name)

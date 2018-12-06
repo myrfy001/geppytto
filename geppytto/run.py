@@ -40,8 +40,7 @@ if __name__ == '__main__':
         advertise_address=args.advertise_address,
         max_browser_count=args.max_browser_count,
         max_browser_context_count=args.max_browser_context_count,
-        current_browser_count=None,
-        fail_counter=0
+        current_browser_count=None
     )
     sys.modules['geppytto_global_info'] = {
         'geppytto_cli_args': args,

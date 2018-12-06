@@ -8,8 +8,7 @@ from geppytto.storage.redis import RedisStorageAccessor
 from geppytto.browser_agent import start_new_agent
 from geppytto.virtual_browser.manager import VirtualBrowserManager
 
-from .v1.new_browser import NewBrowserHandler
-from .v1.node import NodeHandler
+from .v1.named_browser import NamedBrowserHandler
 from geppytto.models import NodeInfo
 
 import geppytto_global_info  # noqa pylint: disable=E0401
@@ -25,8 +24,7 @@ def init_common_instance():
 
 
 def add_routes(app):
-    app.add_route(NewBrowserHandler.as_view(), '/v1/new_browser')
-    app.add_route(NodeHandler.as_view(), '/v1/node')
+    app.add_route(NamedBrowserHandler.as_view(), '/v1/new_browser')
     app.add_websocket_route(app.virt_browser_mgr.ws_handler,
                             '/devtools/browser/<virt_browser_id>')
 
@@ -40,8 +38,7 @@ async def geppytto_service_main(host, port):
         advertise_address=geppytto_cli_args.advertise_address,
         max_browser_count=geppytto_cli_args.max_browser_count,
         max_browser_context_count=geppytto_cli_args.max_browser_context_count,
-        current_browser_count=None,
-        fail_counter=0)
+        current_browser_count=None)
     await app.geppytto_storage.register_node(node_info)
 
     for _ in range(geppytto_cli_args.max_browser_count):
