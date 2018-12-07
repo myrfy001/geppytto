@@ -57,15 +57,17 @@ class BrowserAgent:
         browser_args = {'headless': False, 'handleSIGINT': False,
                         'handleSIGTERM': False}
         if self.user_data_dir is not None:
-            browser_args['user_data_dir'] = self.user_data_dir
+            browser_args['userDataDir'] = self.user_data_dir
         await self.chrome_process_mgr.launch({}, **browser_args)
-        await self.chrome_process_mgr.register_real_browser_info()
 
         self.context_mgr = BrowserContextManager(self)
+        await self.chrome_process_mgr.register_real_browser_info()
 
         if self.browser_name is None:
             for _ in range(self.max_browser_context_count):
                 await self.context_mgr.add_new_browser_context_to_pool()
+        else:
+            await self.chrome_process_mgr.register_named_browser()
 
         self.devprotocol_proxy = DevProtocolProxy(self)
         asyncio.ensure_future(self.devprotocol_proxy.run())
@@ -73,7 +75,7 @@ class BrowserAgent:
         if self.browser_name is None:
             await self.run_as_free_browser_handler(browser_args)
         else:
-            await self.run_as_named_browser_handler()
+            await self.run_as_named_browser_handler(browser_args)
 
     async def run_as_free_browser_handler(self, browser_args):
         while self.running:
@@ -96,7 +98,7 @@ class BrowserAgent:
                     continue
 
                 free_for_long_time = (time.time() - self.devprotocol_proxy.
-                                      last_connection_close_time > 60)
+                                      last_connection_close_time > 60000)
 
                 if (self.devprotocol_proxy.connection_count == 0 and
                         (free_for_long_time or
@@ -139,7 +141,7 @@ class ChromeProcessManager:
         self.rbi = RealBrowserInfo(
             browser_id=None,
             browser_name=agent.browser_name,
-            agent_url=None,
+            agent_url=self.agent.agent_url,
             user_data_dir=agent.user_data_dir,
             browser_start_time=None,
             max_browser_context_count=agent.max_browser_context_count,
@@ -157,16 +159,18 @@ class ChromeProcessManager:
         self.browser_launcher = pyppeteer.launcher.Launcher(options, **kwargs)
         self.browser = await self.browser_launcher.launch()
         self.browser_debug_url = self.browser._connection.url
-        self.browser_id = self.browser_debug_url.split('/')[-1]
+        self.rbi.browser_id = self.browser_debug_url.split('/')[-1]
+        self.rbi.browser_start_time = int(time.time() * 1000)
+        print('browser_debug_url', self.browser_debug_url)
 
     async def register_real_browser_info(self):
-        self.rbi.browser_id = self.browser_id
-        self.rbi.agent_url = self.agent.agent_url
-        self.rbi.browser_start_time = int(time.time() * 1000)
         await self.agent.storage.register_real_browser(self.rbi)
 
     async def unregister_browser(self):
         await self.agent.storage.remove_real_browser(self.rbi)
+
+    async def register_named_browser(self):
+        await self.agent.storage.register_named_browser(self.rbi)
 
     async def stop(self):
         await self.unregister_browser()

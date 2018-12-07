@@ -12,6 +12,7 @@ REAL_BROWSER_INFO_LIST_KEY_NAME = 'real_browser_info_keys'
 NODE_INFO_LIST_KEY_NAME = 'node_info_keys'
 FREE_BROWSER_CONTEXT_SET = 'free_browser_context_set'
 NAMED_BROWSER_HASH_KEY_NAME = 'named_browsers'
+TARGET_ID_TO_AGENT_URL_MAP_PREFIX = 'tgt_id_to_agent_url'
 
 
 class BaseStorageAccrssor:
@@ -78,7 +79,7 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             keys=selected_browsers, fields=fields)
 
         ret_ = []
-        for r in ret_:
+        for r in ret:
             r['node_info'] = json.loads(r['node_info'])
             ret_.append(RealBrowserInfo(**r))
         return ret_
@@ -183,10 +184,18 @@ class RedisStorageAccessor(BaseStorageAccrssor):
         node_name, browser_id = t.split(':')
         return node_name, browser_id
 
-    async def get_named_browser_info(self, browser_name):
+    async def add_target_id_to_agent_url_map(
+            self, target_id: str, agent_url: str):
+        await self.client.set(
+            f'{TARGET_ID_TO_AGENT_URL_MAP_PREFIX}:{target_id}',
+            agent_url, ex=864000)
 
-        t = await self.get_real_browser_info(node_name, browser_id)
-        if not t:
-            return None
-        else:
-            return t[0]
+    async def get_agent_url_by_target_id(
+            self, target_id: str):
+        return await self.client.get(
+            f'{TARGET_ID_TO_AGENT_URL_MAP_PREFIX}:{target_id}')
+
+    async def delete_agent_url_by_target_id(
+            self, target_id: str):
+        await self.client.delete(
+            f'{TARGET_ID_TO_AGENT_URL_MAP_PREFIX}:{target_id}')

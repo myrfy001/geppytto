@@ -23,24 +23,27 @@ class NamedBrowserHandler(HTTPMethodView):
         if browser_name is None:
             return json_resp({'msg': 'require param `browser_name`'})
 
-        start_new_agent({
+        await start_new_agent({
             'node_name': geppytto_cli_args.node_name,
             'redis_addr': geppytto_cli_args.redis_addr,
             'user_data_dir': path.join(geppytto_cli_args.user_data_dir,
-                                       geppytto_cli_args.browser_name),
+                                       browser_name),
             'browser_name': browser_name
         })
+        return json_resp({'msg': 'command sent'})
 
     async def post(self, request):
         browser_name = request.raw_args.get('browser_name', None)
         node_name = request.raw_args.get('node_name', None)
 
         if browser_name is None or node_name is None:
-            return
+            return json_resp(
+                {'msg': 'require param `browser_name` and `node_name`'})
 
         node_info = await request.app.geppytto_storage.get_node_info(node_name)
         if node_info is None:
-            return
+            return json_resp(
+                {'msg': 'node with this node_name not found'})
 
         rbi = RealBrowserInfo(
             browser_id=None,

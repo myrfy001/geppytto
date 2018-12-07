@@ -14,7 +14,9 @@ from pyppeteer.util import get_free_port
 class DevProtocolProxy:
     def __init__(self, agent: 'BrowserAgent'):
         self.agent = agent
-        self.url = agent.chrome_process_mgr.browser_debug_url
+        self.browser_debug_url = agent.chrome_process_mgr.browser_debug_url
+        browser_addr = self.browser_debug_url.split('/devtools/browser/')[0]
+        self.page_debug_url_prefix = browser_addr + '/devtools/page/'
         self.listen_port = agent.listen_port
         self.context_mgr = agent.context_mgr
         self.running = False
@@ -22,18 +24,39 @@ class DevProtocolProxy:
         self.connection_count = 0
         self.last_connection_close_time = time.time()
 
-    async def _websocket_connection_handler(
+    async def _browser_websocket_connection_handler(
             self, request, client_ws, real_browser_id):
         try:
             self.connection_count += 1
-            print('new agent connection')
-            browser_ws = await websockets.connect(self.url)
+            print('new agent browser connection')
+            browser_ws = await websockets.connect(self.browser_debug_url)
             relay_worker = RelayWorker(client_ws, browser_ws)
             await relay_worker.run()
-            print('agent connection closeing')
-            await self.context_mgr.close_context_by_id(relay_worker.context_id)
-            await self.context_mgr.add_new_browser_context_to_pool()
-            print('agent created new browser context to replace the closed one')
+            print('agent browser connection closeing')
+            if self.agent.browser_name is None:
+                await self.context_mgr.close_context_by_id(
+                    relay_worker.context_id)
+                await self.context_mgr.add_new_browser_context_to_pool()
+                print('agent created new browser context to replace the '
+                      'closed one')
+        except:
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.connection_count -= 1
+            self.last_connection_close_time = time.time()
+
+    async def _page_websocket_connection_handler(
+            self, request, client_ws, page_id):
+        try:
+            self.connection_count += 1
+            print('new agent page connection')
+            ws_addr = self.page_debug_url_prefix+page_id
+            print(ws_addr)
+            browser_ws = await websockets.connect(ws_addr)
+            relay_worker = RelayWorker(client_ws, browser_ws)
+            await relay_worker.run()
+            print('agent page connection closeing')
         except:
             import traceback
             traceback.print_exc()
@@ -46,8 +69,13 @@ class DevProtocolProxy:
 
     async def run(self):
         self.server_app.add_websocket_route(
-            self._websocket_connection_handler,
+            self._browser_websocket_connection_handler,
             '/devtools/browser/<real_browser_id>')
+
+        self.server_app.add_websocket_route(
+            self._page_websocket_connection_handler,
+            '/devtools/page/<page_id>')
+
         self.server_app.add_route(
             self._check_id_handler, '/geppytto/v1/check_id')
 
@@ -95,7 +123,8 @@ class RelayWorker:
                 else:
                     await self.handle_control_msg(message[1:])
         except:
-            pass
+            import traceback
+            traceback.print_exc()
         await self.close()
 
     async def _browser_to_client_task(self):
@@ -104,7 +133,8 @@ class RelayWorker:
                 print('B->C', message)
                 await self.client_ws.send(message)
         except:
-            pass
+            import traceback
+            traceback.print_exc()
         await self.close()
 
     async def handle_control_msg(self, message):
