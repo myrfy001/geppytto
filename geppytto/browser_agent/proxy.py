@@ -14,7 +14,7 @@ from pyppeteer.util import get_free_port
 class DevProtocolProxy:
     def __init__(self, agent: 'BrowserAgent'):
         self.agent = agent
-        self.url = agent.chrome_process_mgr.rbi.debug_url
+        self.url = agent.chrome_process_mgr.browser_debug_url
         self.listen_port = agent.listen_port
         self.context_mgr = agent.context_mgr
         self.running = False

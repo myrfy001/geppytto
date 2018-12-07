@@ -24,7 +24,7 @@ def init_common_instance():
 
 
 def add_routes(app):
-    app.add_route(NamedBrowserHandler.as_view(), '/v1/new_browser')
+    app.add_route(NamedBrowserHandler.as_view(), '/v1/named_browser')
     app.add_websocket_route(app.virt_browser_mgr.ws_handler,
                             '/devtools/browser/<virt_browser_id>')
 
@@ -36,13 +36,19 @@ async def geppytto_service_main(host, port):
     node_info = NodeInfo(
         node_name=geppytto_cli_args.node_name,
         advertise_address=geppytto_cli_args.advertise_address,
+        advertise_port=geppytto_cli_args.port,
         max_browser_count=geppytto_cli_args.max_browser_count,
         max_browser_context_count=geppytto_cli_args.max_browser_context_count,
         current_browser_count=None)
     await app.geppytto_storage.register_node(node_info)
 
     for _ in range(geppytto_cli_args.max_browser_count):
-        start_new_agent(geppytto_cli_args)
+        start_new_agent({
+            'node_name': geppytto_cli_args.node_name,
+            'redis_addr': geppytto_cli_args.redis_addr,
+            'max_browser_context_count':
+                geppytto_cli_args.max_browser_context_count,
+        })
     server = app.create_server(host=host, port=port)
     await server
     while 1:

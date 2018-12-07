@@ -81,7 +81,7 @@ class RedisStorageAccessor(BaseStorageAccrssor):
         for r in ret_:
             r['node_info'] = json.loads(r['node_info'])
             ret_.append(RealBrowserInfo(**r))
-        return ret
+        return ret_
 
     async def _fetch_redis_hashes(
             self, keys: List[str], fields: Optional[List[str]] = None,
@@ -100,12 +100,14 @@ class RedisStorageAccessor(BaseStorageAccrssor):
                 if pipe_ret is None:
                     continue
                 if fields is None:
-                    # hgetall returns a dict
-                    ret.append(pipe_ret)
+                    if pipe_ret:
+                        # hgetall returns a dict
+                        ret.append(pipe_ret)
                 else:
                     # hmget returns a tuple
                     tmp_dict = dict(zip(fields, pipe_ret))
-                    ret.append(tmp_dict)
+                    if tmp_dict:
+                        ret.append(tmp_dict)
         return ret
 
     async def register_node(self, node: NodeInfo):
@@ -121,7 +123,10 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             self, node: str, fields: Optional[List[str]] = None):
         ret = await self._fetch_redis_hashes(
             keys=[f'node_info:{node}'], fields=fields)
-        return NodeInfo(**ret[0])
+        if ret:
+            return NodeInfo(**(ret[0]))
+        else:
+            return None
 
     async def add_free_browser_context(self, rbci: RealBrowserContextInfo):
         item = (
@@ -163,6 +168,25 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             node_name=node_name, context_id=context_id, browser_id=browser_id,
             agent_url=agent_url)
 
-    async def register_named_browser(self, browser_name, node_name):
+    async def register_named_browser(self, rbi: RealBrowserInfo):
+
+        data = f'{rbi.node_info.node_name}:{rbi.browser_id}'
+        await self.register_real_browser(rbi)
         await self.client.hset(
-            NAMED_BROWSER_HASH_KEY_NAME, browser_name, node_name)
+            NAMED_BROWSER_HASH_KEY_NAME, rbi.browser_name, data)
+
+    async def get_named_browser_node_and_id_by_name(self, browser_name: str):
+        t = await self.client.hget(
+            NAMED_BROWSER_HASH_KEY_NAME, browser_name)
+        if t is None:
+            return None
+        node_name, browser_id = t.split(':')
+        return node_name, browser_id
+
+    async def get_named_browser_info(self, browser_name):
+
+        t = await self.get_real_browser_info(node_name, browser_id)
+        if not t:
+            return None
+        else:
+            return t[0]

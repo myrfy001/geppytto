@@ -1,11 +1,12 @@
 #coding: utf-8
 
-from geppytto.models import RealBrowserContextInfo
+from geppytto.models import RealBrowserContextInfo, NodeInfo, RealBrowserInfo
 from typing import Optional
 import json
 
 import websockets
 import asyncio
+import aiohttp
 
 import logging
 logger = logging.getLogger()
@@ -31,9 +32,9 @@ class VirtualBrowserManager:
         if browser_name is None:
             await self.handle_free_browser(
                 node_name=node_name, client_ws=client_ws)
-
         else:
-            pass
+            await self.handle_named_browser(
+                browser_name=browser_name, client_ws=client_ws)
 
     async def handle_free_browser(self, node_name: str, client_ws):
         while 1:
@@ -59,6 +60,43 @@ class VirtualBrowserManager:
         proxy_worker = ProxyWorker(
             self, client_ws, browser_ws, context_info, protocol_handler)
         await proxy_worker.run()
+
+    async def handle_named_browser(self, browser_name: str, client_ws):
+
+        node_name_and_browser_id = (
+            await self.storage.get_named_browser_node_and_id_by_name(
+                browser_name))
+        if node_name_and_browser_id is None:
+            print('Named Browser Not Registered')
+            await client_ws.close(reason='Named Browser Not Registered')
+            return
+
+        rbi = await self.storage.get_real_browser_info(
+            *node_name_and_browser_id)
+        if not rbi:
+            rbi = rbi[0]
+        else:
+            await self._ask_node_to_launch_named_browser(rbi)
+
+        print(f'Geppytto trying to connect agent {rbi.agent_url}')
+        try:
+            browser_ws = await asyncio.wait_for(
+                websockets.connect(rbi.agent_url), 2)
+        except:
+            print(f'Connect agent {rbi.agent_url} Timeout')
+            await self._ask_node_to_launch_named_browser(rbi)
+
+    async def _ask_node_to_launch_named_browser(
+            self, rbi: RealBrowserInfo):
+        node_info = rbi.node_info
+        geppytto_node_addr = (
+            f'http://{node_info.advertise_address}:{node_info.advertise_port}'
+            f'/v1/new_browser?browser_name={rbi.browser_name}')
+        async with aiohttp.ClientSession() as sess:
+            async with sess.get(geppytto_node_addr) as resp:
+                ret = await resp.json()
+                agent_url = ret['agent_url']
+                return agent_url
 
 
 class ProxyWorker:

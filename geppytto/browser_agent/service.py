@@ -44,19 +44,22 @@ class BrowserAgent:
         self.node_info = await self.storage.get_node_info(self.node_name)
         self.listen_port = get_free_port()
 
+        self.agent_url = (
+            f'ws://{self.node_info.advertise_address}:{self.listen_port}'
+            f'/devtools/browser/{str(uuid.uuid4())}')
+
         self.max_browser_context_count = (
             self.cli_args.max_browser_context_count or
             self.node_info.max_browser_context_count)
 
         self.chrome_process_mgr = ChromeProcessManager(self)
 
-        kwargs = {'headless': False, 'handleSIGINT': False,
-                  'handleSIGTERM': False}
-        await self.chrome_process_mgr.launch({}, **kwargs)
-
-        self.agent_url = (
-            f'ws://{self.node_info.advertise_address}:{self.listen_port}'
-            f'/devtools/browser/{self.chrome_process_mgr.rbi.browser_id}')
+        browser_args = {'headless': False, 'handleSIGINT': False,
+                        'handleSIGTERM': False}
+        if self.user_data_dir is not None:
+            browser_args['user_data_dir'] = self.user_data_dir
+        await self.chrome_process_mgr.launch({}, **browser_args)
+        await self.chrome_process_mgr.register_real_browser_info()
 
         self.context_mgr = BrowserContextManager(self)
 
@@ -64,9 +67,15 @@ class BrowserAgent:
             for _ in range(self.max_browser_context_count):
                 await self.context_mgr.add_new_browser_context_to_pool()
 
-        devprotocol_proxy = DevProtocolProxy(self)
-        asyncio.ensure_future(devprotocol_proxy.run())
+        self.devprotocol_proxy = DevProtocolProxy(self)
+        asyncio.ensure_future(self.devprotocol_proxy.run())
 
+        if self.browser_name is None:
+            await self.run_as_free_browser_handler(browser_args)
+        else:
+            await self.run_as_named_browser_handler()
+
+    async def run_as_free_browser_handler(self, browser_args):
         while self.running:
             try:
                 # must use `is not True` because it can return None
@@ -75,9 +84,10 @@ class BrowserAgent:
                     # write here so if browser crashed, info will also be
                     #  removed
                     await self.chrome_process_mgr.unregister_browser()
-                    await self.chrome_process_mgr.launch({}, **kwargs)
+                    await self.chrome_process_mgr.launch({}, **browser_args)
+                    await self.chrome_process_mgr.register_real_browser_info()
                     self.context_mgr.prepare_to_restart = False
-                    devprotocol_proxy.__init__(self)
+                    self.devprotocol_proxy.__init__(self)
                     if self.browser_name is None:
                         for _ in range(self.max_browser_context_count):
                             await (
@@ -85,16 +95,16 @@ class BrowserAgent:
                                 add_new_browser_context_to_pool())
                     continue
 
-                free_for_long_time = (time.time() - devprotocol_proxy.
+                free_for_long_time = (time.time() - self.devprotocol_proxy.
                                       last_connection_close_time > 60)
 
-                if (devprotocol_proxy.connection_count == 0 and
+                if (self.devprotocol_proxy.connection_count == 0 and
                         (free_for_long_time or
                          self.context_mgr.prepare_to_restart)):
 
                     await self.context_mgr.delete_all_context_from_pool()
                     await asyncio.sleep(1)
-                    if devprotocol_proxy.connection_count == 0:
+                    if self.devprotocol_proxy.connection_count == 0:
                         print('trying to restart')
                         await self.chrome_process_mgr.stop()
                     continue
@@ -106,6 +116,15 @@ class BrowserAgent:
                 await asyncio.sleep(1)
             except:
                 break
+
+    async def run_as_named_browser_handler(self, browser_args):
+        while self.running:
+            try:
+                if self.chrome_process_mgr.browser_closed is True:
+                    self.running = False
+            except:
+                pass
+            await asyncio.sleep(1)
 
     def stop(self):
         print('Signal Term')
@@ -120,7 +139,7 @@ class ChromeProcessManager:
         self.rbi = RealBrowserInfo(
             browser_id=None,
             browser_name=agent.browser_name,
-            debug_url=None,
+            agent_url=None,
             user_data_dir=agent.user_data_dir,
             browser_start_time=None,
             max_browser_context_count=agent.max_browser_context_count,
@@ -135,15 +154,14 @@ class ChromeProcessManager:
         return None
 
     async def launch(self, options, **kwargs):
-        if self.agent.user_data_dir is not None:
-            kwargs['user_data_dir'] = self.agent.user_data_dir
         self.browser_launcher = pyppeteer.launcher.Launcher(options, **kwargs)
         self.browser = await self.browser_launcher.launch()
-        debug_url = self.browser._connection.url
-        browser_id = debug_url.split('/')[-1]
+        self.browser_debug_url = self.browser._connection.url
+        self.browser_id = self.browser_debug_url.split('/')[-1]
 
-        self.rbi.browser_id = browser_id
-        self.rbi.debug_url = debug_url
+    async def register_real_browser_info(self):
+        self.rbi.browser_id = self.browser_id
+        self.rbi.agent_url = self.agent.agent_url
         self.rbi.browser_start_time = int(time.time() * 1000)
         await self.agent.storage.register_real_browser(self.rbi)
 

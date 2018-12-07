@@ -8,6 +8,7 @@ import time
 class NodeInfo:
     node_name: Optional[str]
     advertise_address: Optional[str]
+    advertise_port: Optional[int]
     max_browser_count: Optional[int]
     # This value will be copied to RealBrowserInfo when new process created
     max_browser_context_count: Optional[int]
@@ -18,7 +19,7 @@ class NodeInfo:
 class RealBrowserInfo:
     browser_id: Optional[str]
     browser_name: Optional[str]
-    debug_url: Optional[str]
+    agent_url: Optional[str]
     user_data_dir: Optional[str]
     browser_start_time: Optional[int]
     # This value may be copied from NodeInfo when created. This allows

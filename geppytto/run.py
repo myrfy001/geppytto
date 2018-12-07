@@ -25,6 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--redis-addr', type=str, default='127.0.0.1:6379')
     parser.add_argument('--max-browser-count', type=int, default=1)
     parser.add_argument('--max-browser-context-count', type=int, default=2)
+    parser.add_argument('--user-data-dir', type=str, default='/tmp/geppytto')
 
     args = parser.parse_args()
 
@@ -38,6 +39,7 @@ if __name__ == '__main__':
     node_info = NodeInfo(
         node_name=args.node_name,
         advertise_address=args.advertise_address,
+        advertise_port=args.port,
         max_browser_count=args.max_browser_count,
         max_browser_context_count=args.max_browser_context_count,
         current_browser_count=None
