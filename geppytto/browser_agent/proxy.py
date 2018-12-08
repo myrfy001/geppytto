@@ -10,6 +10,8 @@ import sanic
 from sanic.response import json as json_resp
 from pyppeteer.util import get_free_port
 
+from geppytto.websocket_proxy import WebsocketProxyWorker
+
 
 class DevProtocolProxy:
     def __init__(self, agent: 'BrowserAgent'):
@@ -30,16 +32,18 @@ class DevProtocolProxy:
             self.connection_count += 1
             print('new agent browser connection')
             browser_ws = await websockets.connect(self.browser_debug_url)
-            relay_worker = RelayWorker(client_ws, browser_ws)
+            protocol_handler = BrowserProtocolHandler(client_ws, browser_ws)
+            relay_worker = WebsocketProxyWorker(
+                client_ws, browser_ws, protocol_handler=protocol_handler)
             await relay_worker.run()
             print('agent browser connection closeing')
             if self.agent.browser_name is None:
                 await self.context_mgr.close_context_by_id(
-                    relay_worker.context_id)
+                    protocol_handler.context_id)
                 await self.context_mgr.add_new_browser_context_to_pool()
                 print('agent created new browser context to replace the '
                       'closed one')
-        except:
+        except Exception:
             import traceback
             traceback.print_exc()
         finally:
@@ -54,10 +58,12 @@ class DevProtocolProxy:
             ws_addr = self.page_debug_url_prefix+page_id
             print(ws_addr)
             browser_ws = await websockets.connect(ws_addr)
-            relay_worker = RelayWorker(client_ws, browser_ws)
+            protocol_handler = PageProtocolHandler()
+            relay_worker = WebsocketProxyWorker(
+                client_ws, browser_ws, protocol_handler=protocol_handler)
             await relay_worker.run()
             print('agent page connection closeing')
-        except:
+        except Exception:
             import traceback
             traceback.print_exc()
         finally:
@@ -84,60 +90,16 @@ class DevProtocolProxy:
         asyncio.ensure_future(server)
 
 
-class RelayWorker:
-
+class BrowserProtocolHandler:
     def __init__(self, client_ws, browser_ws):
         self.client_ws = client_ws
         self.browser_ws = browser_ws
-        self.context_id = None
 
-    def run(self):
-        futures = [
-            self._client_to_browser_task(),
-            self._browser_to_client_task()
-        ]
-        self.gather_future = asyncio.gather(*futures)
-        return self.gather_future
-
-    async def close(self):
-        print('===========')
-        try:
-            await self.client_ws.close()
-        except:
-            import traceback
-            traceback.print_exc()
-
-        try:
-            await self.browser_ws.close()
-        except:
-            import traceback
-            traceback.print_exc()
-
-    async def _client_to_browser_task(self):
-        try:
-            async for message in self.client_ws:
-                print('C->B', message)
-                # Geppytto Control Message Startswith $
-                if not message.startswith('$'):
-                    await self.browser_ws.send(message)
-                else:
-                    await self.handle_control_msg(message[1:])
-        except:
-            import traceback
-            traceback.print_exc()
-        await self.close()
-
-    async def _browser_to_client_task(self):
-        try:
-            async for message in self.browser_ws:
-                print('B->C', message)
-                await self.client_ws.send(message)
-        except:
-            import traceback
-            traceback.print_exc()
-        await self.close()
-
-    async def handle_control_msg(self, message):
+    async def handle_ctl_c2b(self, message):
         message = json.loads(message)
         if message['method'] == 'Agent.set_ws_conn_context_id':
             self.context_id = message['params']['context_id']
+
+
+class PageProtocolHandler:
+    pass

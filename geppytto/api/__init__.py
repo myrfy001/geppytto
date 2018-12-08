@@ -9,6 +9,7 @@ from geppytto.browser_agent import start_new_agent
 from geppytto.virtual_browser.manager import VirtualBrowserManager
 
 from .v1.named_browser import NamedBrowserHandler
+from .v1.websocket import browser_ws_handler, page_ws_handler
 from geppytto.models import NodeInfo
 
 import geppytto_global_info  # noqa pylint: disable=E0401
@@ -25,10 +26,9 @@ def init_common_instance():
 
 def add_routes(app):
     app.add_route(NamedBrowserHandler.as_view(), '/v1/named_browser')
-    app.add_websocket_route(app.virt_browser_mgr.browser_ws_handler,
+    app.add_websocket_route(browser_ws_handler,
                             '/devtools/browser/<virt_browser_id>')
-    app.add_websocket_route(app.virt_browser_mgr.page_ws_handler,
-                            '/devtools/page/<page_id>')
+    app.add_websocket_route(page_ws_handler, '/devtools/page/<page_id>')
 
 
 async def geppytto_service_main(host, port):
