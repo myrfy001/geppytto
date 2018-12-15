@@ -134,6 +134,7 @@ class BrowserProtocolHandler:
         self.browser_ws = browser_ws
         self.req_buf = {}
         self.vbm = vbm
+        self.target_id_for_this_context = set()
 
     async def send_context_id_to_agent_by_control_msg(self):
         await self.browser_ws.send('$' + json.dumps({
@@ -167,10 +168,16 @@ class BrowserProtocolHandler:
             del self.req_buf[id_]
             return None
 
+        if req_data.get('method') == 'Target.createBrowserContext':
+            logger.debug('Modify request Target.createBrowserContext')
+            await self.client_ws.send(
+                'Target.createBrowserContext Not Allowed For Geppytto '
+                'Free Browser')
+            del self.req_buf[id_]
+            return None
         if req_data.get('method') == 'Target.createTarget':
-            if self.target_contextid is not None:
-                logger.debug('Modify request Target.createTarget')
-                req_data['params']['browserContextId'] = self.target_contextid
+            logger.debug('Modify request Target.createTarget')
+            req_data['params']['browserContextId'] = self.target_contextid
 
         if req_data.get('method') == 'Browser.close':
             await self.client_ws.send(
@@ -182,15 +189,37 @@ class BrowserProtocolHandler:
     async def handle_b2c(self, resp_data):
         resp_data = json.loads(resp_data)
         id_ = resp_data.get('id')
-        req_data = self.req_buf.get(id_, {})
+        req_data = self.req_buf.pop(id_, {})
 
         if resp_data.get('method') == 'Target.targetCreated':
+            target_id = resp_data['params']['targetInfo']['targetId']
             await self.vbm.storage.add_target_id_to_agent_url_map(
-                resp_data['params']['targetInfo']['targetId'],
+                target_id,
                 f'ws://{self.browser_ws.host}:{self.browser_ws.port}')
 
+            if not resp_data['params']['targetInfo'].get(
+                    'browserContextId') == self.target_contextid:
+                # block targets that not related to current context
+                return None
+            else:
+                # because Target.targetDestroyed don't contain browserContextId
+                # we must save which one belongs to this context
+                self.target_id_for_this_context.add(target_id)
+
+        if resp_data.get('method') == 'Target.targetInfoChanged':
+            if not resp_data['params']['targetInfo'].get(
+                    'browserContextId') == self.target_contextid:
+                # block targets that not related to current context
+                return None
+
         if resp_data.get('method') == 'Target.targetDestroyed':
-            await self.vbm.storage.delete_agent_url_by_target_id(
-                resp_data['params']['targetId'])
+            target_id = resp_data['params']['targetId']
+            await self.vbm.storage.delete_agent_url_by_target_id(target_id)
+
+            if target_id not in self.target_id_for_this_context:
+                # block targets that not related to current context
+                return None
+            else:
+                self.target_id_for_this_context.remove(target_id)
 
         return json.dumps(resp_data)

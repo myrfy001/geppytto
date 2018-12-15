@@ -58,6 +58,6 @@ class PageProtocolHandler:
     async def handle_b2c(self, resp_data):
         resp_data = json.loads(resp_data)
         id_ = resp_data.get('id')
-        req_data = self.req_buf.get(id_, {})
+        req_data = self.req_buf.pop(id_, {})
 
         return json.dumps(resp_data)
