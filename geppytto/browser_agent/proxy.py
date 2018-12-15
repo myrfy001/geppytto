@@ -33,9 +33,10 @@ class DevProtocolProxy:
             print('new agent browser connection')
             browser_ws = await websockets.connect(self.browser_debug_url)
             protocol_handler = BrowserProtocolHandler(client_ws, browser_ws)
-            relay_worker = WebsocketProxyWorker(
+            proxy_worker = WebsocketProxyWorker(
                 client_ws, browser_ws, protocol_handler=protocol_handler)
-            await relay_worker.run()
+            await proxy_worker.run()
+            await proxy_worker.close()
             print('agent browser connection closeing')
             if self.agent.browser_name is None:
                 await self.context_mgr.close_context_by_id(
@@ -59,9 +60,10 @@ class DevProtocolProxy:
             print(ws_addr)
             browser_ws = await websockets.connect(ws_addr)
             protocol_handler = PageProtocolHandler()
-            relay_worker = WebsocketProxyWorker(
+            proxy_worker = WebsocketProxyWorker(
                 client_ws, browser_ws, protocol_handler=protocol_handler)
-            await relay_worker.run()
+            await proxy_worker.run()
+            await proxy_worker.close()
             print('agent page connection closeing')
         except Exception:
             import traceback

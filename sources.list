@@ -1,0 +1,10 @@
+deb http://mirror.math.princeton.edu/pub/ubuntu/ bionic main restricted universe multiverse
+deb http://mirror.math.princeton.edu/pub/ubuntu/ bionic-security main restricted universe multiverse
+deb http://mirror.math.princeton.edu/pub/ubuntu/ bionic-updates main restricted universe multiverse
+deb http://mirror.math.princeton.edu/pub/ubuntu/ bionic-proposed main restricted universe multiverse
+deb http://mirror.math.princeton.edu/pub/ubuntu/ bionic-backports main restricted universe multiverse
+deb-src http://mirror.math.princeton.edu/pub/ubuntu/ bionic main restricted universe multiverse
+deb-src http://mirror.math.princeton.edu/pub/ubuntu/ bionic-security main restricted universe multiverse
+deb-src http://mirror.math.princeton.edu/pub/ubuntu/ bionic-updates main restricted universe multiverse
+deb-src http://mirror.math.princeton.edu/pub/ubuntu/ bionic-proposed main restricted universe multiverse
+deb-src http://mirror.math.princeton.edu/pub/ubuntu/ bionic-backports main restricted universe multiverse

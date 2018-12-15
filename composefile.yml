@@ -1,0 +1,35 @@
+version: '3.3'
+services:
+
+  geppytto:
+    image: geppytto
+    command: ["python", "geppytto/run.py", "--redis-addr=geppytto_redis:6379"]
+    environment:
+      - PYPPETEER_HOME=/data/pyppetter
+    volumes:
+      - /data/geppytto/pyppetter:/data/pyppetter
+    deploy:
+      mode: global
+    ports:
+      - 9990:9990
+    networks:
+      - geppytto_net
+
+
+
+
+  redis:
+    image: redis:3.2.11
+    volumes:
+      - /data/geppytto/redis/data:/data
+    ports:
+      - 63790:6379
+    networks:
+      - geppytto_net
+
+
+
+networks:
+  geppytto_net:
+    external: true
+    driver: overlay

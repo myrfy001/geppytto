@@ -58,7 +58,8 @@ class BrowserAgent:
                         'handleSIGTERM': False}
         if self.user_data_dir is not None:
             browser_args['userDataDir'] = self.user_data_dir
-        await self.chrome_process_mgr.launch({}, **browser_args)
+        await self.chrome_process_mgr.launch(
+            {'args': ['--no-sandbox']}, **browser_args)
 
         self.context_mgr = BrowserContextManager(self)
         await self.chrome_process_mgr.register_real_browser_info()
@@ -86,7 +87,8 @@ class BrowserAgent:
                     # write here so if browser crashed, info will also be
                     #  removed
                     await self.chrome_process_mgr.unregister_browser()
-                    await self.chrome_process_mgr.launch({}, **browser_args)
+                    await self.chrome_process_mgr.launch(
+                        {'args': ['--no-sandbox']}, **browser_args)
                     await self.chrome_process_mgr.register_real_browser_info()
                     self.context_mgr.prepare_to_restart = False
                     self.devprotocol_proxy.__init__(self)

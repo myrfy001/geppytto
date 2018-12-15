@@ -9,8 +9,8 @@ async def main():
     # await asyncio.sleep(100000)
     page = await browser.newPage()
     await page.goto('http://example.com')
-    # await page.screenshot({'path': 'example.png'})
+    await page.screenshot({'path': 'example.png'})
     # await browser.close()
-    await asyncio.sleep(100000)
+    # await asyncio.sleep(100000)
 
 asyncio.get_event_loop().run_until_complete(main())

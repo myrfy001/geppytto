@@ -49,6 +49,7 @@ class BrowserDebugHandler:
         proxy_worker = WebsocketProxyWorker(
             self.client_ws, browser_ws, protocol_handler)
         await proxy_worker.run()
+        await proxy_worker.close()
 
     async def get_free_browser(self, node_name: str, client_ws):
         while 1:

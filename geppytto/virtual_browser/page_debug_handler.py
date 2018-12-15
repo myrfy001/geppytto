@@ -37,6 +37,7 @@ class PageDebugHandler:
         proxy_worker = WebsocketProxyWorker(
             self.client_ws, page_ws, protocol_handler)
         await proxy_worker.run()
+        await proxy_worker.close()
 
 
 class PageProtocolHandler:
