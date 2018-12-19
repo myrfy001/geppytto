@@ -2,10 +2,12 @@ version: '3.3'
 services:
 
   geppytto:
-    image: geppytto
+    image: 10.60.118.90:5000/geppytto
     command: ["python", "geppytto/run.py", "--redis-addr=geppytto_redis:6379"]
+    dns: 8.8.8.8
     environment:
       - PYPPETEER_HOME=/data/pyppetter
+      - GEPPYTTO_NODE_NAME={{.Node.Hostname}}
     volumes:
       - /data/geppytto/pyppetter:/data/pyppetter
     deploy:
@@ -26,8 +28,11 @@ services:
       - 63790:6379
     networks:
       - geppytto_net
-
-
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
 
 networks:
   geppytto_net:

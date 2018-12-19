@@ -184,6 +184,16 @@ class RedisStorageAccessor(BaseStorageAccrssor):
         node_name, browser_id = t.split(':')
         return node_name, browser_id
 
+    async def list_all_named_browsers(self):
+        t = await self.client.hgetall(NAMED_BROWSER_HASH_KEY_NAME)
+        if not t:
+            return {}
+        ret = {}
+        for k, v in t.items():
+            node_name, browser_id = v.split(':')
+            ret[k] = {'node_name': node_name, 'browser_id': browser_id}
+        return ret
+
     async def add_target_id_to_agent_url_map(
             self, target_id: str, agent_url: str):
         await self.client.set(

@@ -11,6 +11,7 @@ import aiohttp
 
 import logging
 logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
 
 
 class BrowserDebugHandler:
@@ -119,9 +120,10 @@ class BrowserDebugHandler:
             self, node_info: NodeInfo, browser_name: str):
         geppytto_node_addr = (
             f'http://{node_info.advertise_address}:{node_info.advertise_port}'
-            f'/v1/named_browser?browser_name={browser_name}')
+            f'/v1/named_browser?browser_name={browser_name}'
+            f'&action=launch_named_browser')
         async with aiohttp.ClientSession() as sess:
-            async with sess.get(geppytto_node_addr) as resp:
+            async with sess.post(geppytto_node_addr) as resp:
                 ret = await resp.json()
 
 
@@ -149,9 +151,8 @@ class BrowserProtocolHandler:
             self.req_buf[id_] = req_data
 
         ######################################
-        # Write logic for named browser below
+        # Write logic for all browser below
         ######################################
-
         if self.target_contextid is None:
             return json.dumps(req_data)
 
@@ -191,15 +192,32 @@ class BrowserProtocolHandler:
         id_ = resp_data.get('id')
         req_data = self.req_buf.pop(id_, {})
 
+        ######################################
+        # Write logic for all browser below
+        ######################################
         if resp_data.get('method') == 'Target.targetCreated':
             target_id = resp_data['params']['targetInfo']['targetId']
             await self.vbm.storage.add_target_id_to_agent_url_map(
                 target_id,
                 f'ws://{self.browser_ws.host}:{self.browser_ws.port}')
 
+        if resp_data.get('method') == 'Target.targetDestroyed':
+            target_id = resp_data['params']['targetId']
+            await self.vbm.storage.delete_agent_url_by_target_id(target_id)
+
+        if self.target_contextid is None:
+            return json.dumps(resp_data)
+
+        ######################################
+        # Write logic for free browser below
+        ######################################
+
+        if resp_data.get('method') == 'Target.targetCreated':
+            target_id = resp_data['params']['targetId']
             if not resp_data['params']['targetInfo'].get(
                     'browserContextId') == self.target_contextid:
                 # block targets that not related to current context
+                logger.debug(f'Blocked Target.targetCreated Event {resp_data}')
                 return None
             else:
                 # because Target.targetDestroyed don't contain browserContextId
@@ -210,14 +228,17 @@ class BrowserProtocolHandler:
             if not resp_data['params']['targetInfo'].get(
                     'browserContextId') == self.target_contextid:
                 # block targets that not related to current context
+                logger.debug(
+                    f'Blocked Target.targetInfoChanged Event {resp_data}')
                 return None
 
         if resp_data.get('method') == 'Target.targetDestroyed':
             target_id = resp_data['params']['targetId']
-            await self.vbm.storage.delete_agent_url_by_target_id(target_id)
 
             if target_id not in self.target_id_for_this_context:
                 # block targets that not related to current context
+                logger.debug(
+                    f'Blocked Target.targetDestroyed Event {resp_data}')
                 return None
             else:
                 self.target_id_for_this_context.remove(target_id)

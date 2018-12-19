@@ -4,6 +4,14 @@ import gc
 import socket
 from typing import Dict, Optional, Type, Union, get_type_hints, Any
 from dataclasses import fields as dc_fields, MISSING
+import re
+
+
+VALID_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
+def is_name_valid(name):
+    return VALID_NAME_PATTERN.match(name) is not None
 
 
 def get_free_port() -> int:

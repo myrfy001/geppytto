@@ -1,6 +1,8 @@
 import asyncio
 from pyppeteer import connect
 import logging
+import uuid
+import traceback
 
 
 async def main():
@@ -18,4 +20,21 @@ async def main():
     await browser.close()
     # await asyncio.sleep(100000)
 
-asyncio.get_event_loop().run_until_complete(main())
+
+async def main1():
+    # while 1:
+    try:
+        browser = await connect({'browserWSEndpoint': f'ws://127.0.0.1:9990/devtools/browser/{str(uuid.uuid4())}?browser_name=br1'}, logLevel=logging.DEBUG)
+        page = await browser.newPage()
+        await page.goto('http://example.com')
+        await page.close()
+        await browser.disconnect()
+        # await asyncio.sleep(1)
+        del browser
+    except Exception:
+        traceback.print_exc()
+
+
+asyncio.get_event_loop().run_until_complete(asyncio.gather(
+    main1()
+))
