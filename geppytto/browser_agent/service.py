@@ -54,7 +54,7 @@ class BrowserAgent:
 
         self.chrome_process_mgr = ChromeProcessManager(self)
 
-        browser_args = {'headless': True, 'handleSIGINT': False,
+        browser_args = {'headless': False, 'handleSIGINT': False,
                         'handleSIGTERM': False}
         if self.user_data_dir is not None:
             browser_args['userDataDir'] = self.user_data_dir
