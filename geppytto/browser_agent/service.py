@@ -6,6 +6,7 @@ import signal
 import asyncio
 import argparse
 import sys
+import logging
 import threading
 
 import uuid
@@ -20,6 +21,8 @@ from pyppeteer.util import get_free_port
 from geppytto.utils import create_simple_dataclass_from_dict
 
 import geppytto_agent_global_info  # noqa pylint: disable=E0401
+
+logger = logging.getLogger()
 
 
 async def subprocess_main(cli_args):
@@ -54,7 +57,7 @@ class BrowserAgent:
 
         self.chrome_process_mgr = ChromeProcessManager(self)
 
-        browser_args = {'headless': False, 'handleSIGINT': False,
+        browser_args = {'headless': True, 'handleSIGINT': False,
                         'handleSIGTERM': False}
         if self.user_data_dir is not None:
             browser_args['userDataDir'] = self.user_data_dir
@@ -109,17 +112,17 @@ class BrowserAgent:
                     await self.context_mgr.delete_all_context_from_pool()
                     await asyncio.sleep(1)
                     if self.devprotocol_proxy.connection_count == 0:
-                        print('trying to restart')
+                        logger.info('trying to restart')
                         await self.chrome_process_mgr.stop()
                     continue
 
                 if (time.time()*1000 -
                         self.chrome_process_mgr.rbi.browser_start_time
-                        > 1000*1800):
+                        > 1000*120):
                     self.context_mgr.prepare_to_restart = True
                 await asyncio.sleep(1)
-            except:
-                break
+            except Exception:
+                logger.exception('run_as_free_browser_handler')
 
     async def run_as_named_browser_handler(self, browser_args):
         while self.running:
@@ -131,7 +134,7 @@ class BrowserAgent:
             await asyncio.sleep(1)
 
     def stop(self):
-        print('Signal Term')
+        logger.info('Signal Term')
         self.running = False
 
 
@@ -163,7 +166,7 @@ class ChromeProcessManager:
         self.browser_debug_url = self.browser._connection.url
         self.rbi.browser_id = self.browser_debug_url.split('/')[-1]
         self.rbi.browser_start_time = int(time.time() * 1000)
-        print('browser_debug_url', self.browser_debug_url)
+        logger.debug(f'browser_debug_url {self.browser_debug_url}')
 
     async def register_real_browser_info(self):
         await self.agent.storage.register_real_browser(self.rbi)

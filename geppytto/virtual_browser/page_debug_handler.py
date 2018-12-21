@@ -27,7 +27,7 @@ class PageDebugHandler:
         page_id = self.kwargs['page_id']
         node_address = await self.storage.get_agent_url_by_target_id(page_id)
         if node_address is None:
-            print('Target Not Found')
+            logger.error('Target Not Found')
             await self.client_ws.close(reason='Target Not Found')
             return
         ws_addr = f'{node_address}/devtools/page/{page_id}'
@@ -35,6 +35,7 @@ class PageDebugHandler:
         protocol_handler = PageProtocolHandler(
             self.client_ws, page_ws, vbm=self)
         proxy_worker = WebsocketProxyWorker(
+            'Geppytto Page Debug Proxy',
             self.client_ws, page_ws, protocol_handler)
         await proxy_worker.run()
         await proxy_worker.close()

@@ -20,11 +20,12 @@ if __name__ == '__main__':
     logging.getLogger('websockets').setLevel(logging.CRITICAL)
     _logger = logging.getLogger('geppytto')
     _log_handler = logging.StreamHandler()
-    _log_handler.setLevel(logging.DEBUG)
+    _log_handler.setLevel(logging.INFO)
     _logger.addHandler(_log_handler)
     _logger.propagate = False
 
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
+
     parser = argparse.ArgumentParser(
         description='Geppytto -- Build your headless chrome cluster')
     parser.add_argument('--host', type=str, default='0.0.0.0')

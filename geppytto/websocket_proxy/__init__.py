@@ -1,11 +1,15 @@
 # coding:utf-8
 
 import asyncio
+import logging
+import time
+logger = logging.getLogger(__name__)
 
 
 class WebsocketProxyWorker:
-    def __init__(self, client_ws, browser_ws,
-                 protocol_handler: 'ProtocolHandler'):
+    def __init__(self, name, client_ws, browser_ws,
+                 protocol_handler: 'ProtocolHandler', idle_timeout=20):
+        self.name = name
         self.client_ws = client_ws
         self.browser_ws = browser_ws
         self.protocol_handler = protocol_handler
@@ -15,13 +19,20 @@ class WebsocketProxyWorker:
             self.protocol_handler, 'handle_ctl_c2b')
         self._has_ctl_b2c_handler = hasattr(
             self.protocol_handler, 'handle_ctl_b2c')
+        self.idle_timeout = idle_timeout
+        self.last_client_activate_time = time.time()
 
-    def run(self):
+    async def run(self):
         futures = [
             self._client_to_browser_task(),
-            self._browser_to_client_task()
+            self._browser_to_client_task(),
+            self.idle_connection_timeout_task()
         ]
-        return asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            futures, return_when=asyncio.FIRST_COMPLETED)
+
+        for task in pending:
+            task.cancel()
 
     async def close(self):
         try:
@@ -36,7 +47,8 @@ class WebsocketProxyWorker:
 
     async def _client_to_browser_task(self):
         async for message in self.client_ws:
-            print('CC->BB', message)
+            logger.debug(f'{self.name} C->B {message}')
+            self.last_client_activate_time = time.time()
             if message.startswith('$') and self._has_ctl_c2b_handler:
                 await self.protocol_handler.handle_ctl_c2b(message[1:])
             else:
@@ -49,7 +61,7 @@ class WebsocketProxyWorker:
 
     async def _browser_to_client_task(self):
         async for message in self.browser_ws:
-            print('BB->CC', message)
+            logger.debug(f'{self.name} B->C {message}')
             if message.startswith('$') and self._has_ctl_b2c_handler:
                 await self.protocol_handler.handle_ctl_b2c(message[1:])
             else:
@@ -59,3 +71,12 @@ class WebsocketProxyWorker:
                     msg = message
                 if msg is not None:
                     await self.client_ws.send(msg)
+
+    async def idle_connection_timeout_task(self):
+        while 1:
+            await asyncio.sleep(5)
+            if self.idle_timeout == 0:
+                continue
+            if (time.time() - self.last_client_activate_time
+                    > self.idle_timeout):
+                raise Exception('Connextion Idle Timeout')

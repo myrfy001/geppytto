@@ -11,7 +11,6 @@ import aiohttp
 
 import logging
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
 
 
 class BrowserDebugHandler:
@@ -40,34 +39,40 @@ class BrowserDebugHandler:
             return
         browser_ws, context_info = t
 
-        protocol_handler = BrowserProtocolHandler(
-            self.client_ws, browser_ws,
-            target_contextid=context_info.context_id,
-            vbm=self.vbm)
-
-        await protocol_handler.send_context_id_to_agent_by_control_msg()
+        protocol_handler = BrowserProtocolHandler()
 
         proxy_worker = WebsocketProxyWorker(
+            'Geppytto Browser Debug Proxy',
             self.client_ws, browser_ws, protocol_handler)
         await proxy_worker.run()
         await proxy_worker.close()
 
     async def get_free_browser(self, node_name: str, client_ws):
         while 1:
-            context_info = await self.storage.get_free_browser_context(
-                node_name=node_name)
-            if context_info is None:
+            for retry in range(5):
+                context_info = await self.storage.get_free_browser_context(
+                    node_name=node_name)
+                if context_info is None:
+                    await asyncio.sleep(0.2)
+                    continue
+                else:
+                    break
+            else:
                 await client_ws.close(reason='Browser Busy')
                 return None
 
-            print(
+            logger.debug(
                 f'Geppytto trying to connect agent {context_info.agent_url}')
             try:
                 browser_ws = await asyncio.wait_for(
-                    websockets.connect(context_info.agent_url), 2)
+                    websockets.connect(
+                        context_info.agent_url,
+                        extra_headers={'x-geppytto-browser-context-id':
+                                       context_info.context_id}
+                    ), 2)
                 break
             except Exception:
-                print(f'Connect agent {context_info.agent_url} Timeout')
+                logger.debug(f'Connect agent {context_info.agent_url} Timeout')
                 continue
         return browser_ws, context_info
 
@@ -78,7 +83,7 @@ class BrowserDebugHandler:
                 await self.storage.get_named_browser_node_and_id_by_name(
                     browser_name))
             if node_name_and_browser_id is None:
-                print('Named Browser Not Registered')
+                logger.debug('Named Browser Not Registered')
                 await client_ws.close(reason='Named Browser Not Registered')
                 return
 
@@ -90,7 +95,8 @@ class BrowserDebugHandler:
             try:
                 if rbi:
                     rbi = rbi[0]
-                    print(f'Geppytto trying to connect agent {rbi.agent_url}')
+                    logger.debug(
+                        f'Geppytto trying to connect agent {rbi.agent_url}')
                     browser_ws = await asyncio.wait_for(
                         websockets.connect(rbi.agent_url), 2)
 
@@ -108,7 +114,7 @@ class BrowserDebugHandler:
                     await self._ask_node_to_launch_named_browser(
                         node_info, browser_name)
             except Exception:
-                print(f'Connect named browser {browser_name} Timeout')
+                logger.debug(f'Connect named browser {browser_name} Timeout')
                 await self._ask_node_to_launch_named_browser(
                     node_info, browser_name)
 
@@ -128,18 +134,4 @@ class BrowserDebugHandler:
 
 
 class BrowserProtocolHandler:
-    def __init__(self, client_ws, browser_ws,
-                 target_contextid: Optional[str] = None,
-                 vbm: 'VirtualBrowserManager' = None):
-        self.target_contextid = target_contextid
-        self.client_ws = client_ws
-        self.browser_ws = browser_ws
-        self.req_buf = {}
-        self.vbm = vbm
-        self.target_id_for_this_context = set()
-
-    async def send_context_id_to_agent_by_control_msg(self):
-        await self.browser_ws.send('$' + json.dumps({
-            'method': 'Agent.set_ws_conn_context_id',
-            'params': {'context_id': self.target_contextid}
-        }))
+    pass

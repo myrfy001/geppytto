@@ -167,10 +167,6 @@ RUN mkdir -p $application_directory
 WORKDIR $application_directory
 
 
-# It's a good idea to use dumb-init to help prevent zombie chrome processes.
-ADD https://github.com/Yelp/dumb-init/releases/download/v1.2.0/dumb-init_1.2.0_amd64 /usr/local/bin/dumb-init
-RUN chmod +x /usr/local/bin/dumb-init
-
 
 # Install app dependencies
 COPY requirements.txt .
@@ -179,24 +175,21 @@ RUN pip install --no-cache -r requirements.txt
 # Bundle app source
 COPY . .
 
-# Install Chrome Stable when specified
-RUN if [ "$USE_CHROME_STABLE" = "true" ]; then \
-    cd /tmp &&\
-    wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb &&\
-    dpkg -i google-chrome-stable_current_amd64.deb;\
-  fi
-
 # Cleanup
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Add user
-RUN groupadd -r blessuser && useradd -r -g blessuser -G audio,video blessuser \
-  && mkdir -p /home/blessuser/Downloads \
-  && chown -R blessuser:blessuser /home/blessuser \
-  && chown -R blessuser:blessuser $application_directory
+RUN groupadd -r geppytto && useradd -r -g geppytto -G audio,video geppytto \
+  && mkdir -p /home/geppytto/Downloads \
+  && chown -R geppytto:geppytto /home/geppytto \
+  && chown -R geppytto:geppytto $application_directory
+
+# It's a good idea to use dumb-init to help prevent zombie chrome processes.
+ADD https://github.com/Yelp/dumb-init/releases/download/v1.2.0/dumb-init_1.2.0_amd64 /usr/local/bin/dumb-init
+RUN chmod +x /usr/local/bin/dumb-init
 
 # Run everything after as non-privileged user.
-USER blessuser
+USER geppytto
 
 # Expose the web-socket and HTTP ports
 EXPOSE 9990

@@ -15,7 +15,6 @@ from geppytto.websocket_proxy import WebsocketProxyWorker
 
 
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
 
 
 class DevProtocolProxy:
@@ -35,24 +34,26 @@ class DevProtocolProxy:
             self, request, client_ws, real_browser_id):
         try:
             self.connection_count += 1
-            print('new agent browser connection')
+            logger.debug('new agent browser connection')
+            target_contextid = request.headers.get(
+                'x-geppytto-browser-context-id', None)
             browser_ws = await websockets.connect(self.browser_debug_url)
             protocol_handler = BrowserProtocolHandler(
-                self.agent, client_ws, browser_ws)
+                self.agent, client_ws, browser_ws, target_contextid)
             proxy_worker = WebsocketProxyWorker(
+                'Agent Browser Debug Proxy',
                 client_ws, browser_ws, protocol_handler=protocol_handler)
             await proxy_worker.run()
             await proxy_worker.close()
-            print('agent browser connection closeing')
+            logger.info('agent browser connection closeing')
             if self.agent.browser_name is None:
-                await self.context_mgr.close_context_by_id(
-                    protocol_handler.target_contextid)
+                await self.context_mgr.close_context_by_id(target_contextid)
                 await self.context_mgr.add_new_browser_context_to_pool()
-                print('agent created new browser context to replace the '
-                      'closed one')
+                logger.info(
+                    'agent created new browser context to replace the '
+                    'closed one')
         except Exception:
-            import traceback
-            traceback.print_exc()
+            logger.exception('_browser_websocket_connection_handler')
         finally:
             self.connection_count -= 1
             self.last_connection_close_time = time.time()
@@ -61,19 +62,19 @@ class DevProtocolProxy:
             self, request, client_ws, page_id):
         try:
             self.connection_count += 1
-            print('new agent page connection')
+            logger.debug('new agent page connection')
             ws_addr = self.page_debug_url_prefix+page_id
-            print(ws_addr)
+            logger.debug(f'agent connecting to browser at {ws_addr}')
             browser_ws = await websockets.connect(ws_addr)
             protocol_handler = PageProtocolHandler()
             proxy_worker = WebsocketProxyWorker(
+                'Agent Page Debug Proxy',
                 client_ws, browser_ws, protocol_handler=protocol_handler)
             await proxy_worker.run()
             await proxy_worker.close()
-            print('agent page connection closeing')
+            logger.debug('agent page connection closeing')
         except Exception:
-            import traceback
-            traceback.print_exc()
+            logger.exception('_page_websocket_connection_handler')
         finally:
             self.connection_count -= 1
             self.last_connection_close_time = time.time()
@@ -99,18 +100,14 @@ class DevProtocolProxy:
 
 
 class BrowserProtocolHandler:
-    def __init__(self, agent: 'BrowserAgent', client_ws, browser_ws):
-        self.target_contextid = None
+    def __init__(self, agent: 'BrowserAgent', client_ws, browser_ws,
+                 target_contextid):
+        self.target_contextid = target_contextid
         self.client_ws = client_ws
         self.browser_ws = browser_ws
         self.req_buf = {}
         self.agent = agent
         self.target_id_for_this_context = set()
-
-    async def handle_ctl_c2b(self, message):
-        message = json.loads(message)
-        if message['method'] == 'Agent.set_ws_conn_context_id':
-            self.target_contextid = message['params']['context_id']
 
     async def handle_c2b(self, req_data):
         req_data = json.loads(req_data)
