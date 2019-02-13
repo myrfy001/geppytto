@@ -7,7 +7,7 @@ import asyncio
 import argparse
 import sys
 import logging
-import threading
+import traceback
 
 import uuid
 
@@ -23,6 +23,7 @@ from geppytto.utils import create_simple_dataclass_from_dict
 import geppytto_agent_global_info  # noqa pylint: disable=E0401
 
 logger = logging.getLogger()
+fo = open('log.log', 'w')
 
 
 async def subprocess_main(cli_args):
@@ -82,46 +83,78 @@ class BrowserAgent:
             await self.run_as_named_browser_handler(browser_args)
 
     async def run_as_free_browser_handler(self, browser_args):
+
+        async def do_check():
+            logger.info('enter do_check()\n')
+            # must use `is not True` because it can return None
+            # when browser not started yet
+            if (
+                    self.chrome_process_mgr.browser_closed is True and
+                    self.devprotocol_proxy.connection_count <= 0):
+                # write here so if browser crashed, info will also be
+                #  removed
+                logger.info('do_check() --01')
+                await self.chrome_process_mgr.unregister_browser()
+                logger.info('do_check() --02')
+                await self.chrome_process_mgr.launch(
+                    {'args': ['--no-sandbox']}, **browser_args)
+                logger.info('do_check() --03')
+                await self.chrome_process_mgr.register_real_browser_info()
+                logger.info('do_check() --04')
+                self.context_mgr.prepare_to_restart = False
+                logger.info('do_check() --05')
+                self.devprotocol_proxy.__init__(self)
+                logger.info('do_check() --06')
+                if self.browser_name is None:
+                    logger.info('do_check() --07')
+                    for _ in range(self.max_browser_context_count):
+                        logger.info('do_check() --08')
+                        await (
+                            self.context_mgr.
+                            add_new_browser_context_to_pool())
+                return
+            logger.info('do_check() --09')
+            free_for_long_time = (time.time() - self.devprotocol_proxy.
+                                  last_connection_close_time > 60000)
+            logger.info('do_check() --10')
+            logger.info(
+                f'self.devprotocol_proxy.connection_count={self.devprotocol_proxy.connection_count}')
+            if (self.devprotocol_proxy.connection_count <= 0 and
+                    (free_for_long_time or
+                        self.context_mgr.prepare_to_restart)):
+                logger.info('do_check() --11')
+
+                await self.context_mgr.delete_all_context_from_pool()
+                logger.info('do_check() --12')
+                await asyncio.sleep(1)
+                logger.info('do_check() --13')
+                if self.devprotocol_proxy.connection_count <= 0:
+                    logger.info('do_check() --14')
+                    logger.info('trying to restart')
+                    logger.info('do_check() --15')
+                    try:
+                        await self.chrome_process_mgr.stop()
+                    except Exception:
+                        logger.Exception('do_check() --15-1')
+                    logger.info('do_check() --16')
+                return
+            logger.info('do_check() --17')
+
+            if (time.time()*1000 -
+                    self.chrome_process_mgr.rbi.browser_start_time
+                    > 1000*120):
+                logger.info('do_check() --18')
+                self.context_mgr.prepare_to_restart = True
+                logger.info('do_check() --19')
+
         while self.running:
             try:
-                # must use `is not True` because it can return None
-                # when browser not started yet
-                if self.chrome_process_mgr.browser_closed is True:
-                    # write here so if browser crashed, info will also be
-                    #  removed
-                    await self.chrome_process_mgr.unregister_browser()
-                    await self.chrome_process_mgr.launch(
-                        {'args': ['--no-sandbox']}, **browser_args)
-                    await self.chrome_process_mgr.register_real_browser_info()
-                    self.context_mgr.prepare_to_restart = False
-                    self.devprotocol_proxy.__init__(self)
-                    if self.browser_name is None:
-                        for _ in range(self.max_browser_context_count):
-                            await (
-                                self.context_mgr.
-                                add_new_browser_context_to_pool())
-                    continue
-
-                free_for_long_time = (time.time() - self.devprotocol_proxy.
-                                      last_connection_close_time > 60000)
-
-                if (self.devprotocol_proxy.connection_count == 0 and
-                        (free_for_long_time or
-                         self.context_mgr.prepare_to_restart)):
-
-                    await self.context_mgr.delete_all_context_from_pool()
-                    await asyncio.sleep(1)
-                    if self.devprotocol_proxy.connection_count == 0:
-                        logger.info('trying to restart')
-                        await self.chrome_process_mgr.stop()
-                    continue
-
-                if (time.time()*1000 -
-                        self.chrome_process_mgr.rbi.browser_start_time
-                        > 1000*120):
-                    self.context_mgr.prepare_to_restart = True
+                await asyncio.wait_for(do_check(), 5)
                 await asyncio.sleep(1)
+                logger.info('do_check() finish')
             except Exception:
+                logger.info('do_check() error')
+                logger.info(traceback.format_exc())
                 logger.exception('run_as_free_browser_handler')
 
     async def run_as_named_browser_handler(self, browser_args):
@@ -129,8 +162,8 @@ class BrowserAgent:
             try:
                 if self.chrome_process_mgr.browser_closed is True:
                     self.running = False
-            except:
-                pass
+            except Exception:
+                logger.exception('run_as_named_browser_handler')
             await asyncio.sleep(1)
 
     def stop(self):
@@ -186,29 +219,33 @@ class BrowserContextManager:
 
     def __init__(self, agent: BrowserAgent):
         self.agent = agent
-        self.contexts = []
+        self.contexts = {}
         self.prepare_to_restart = False
 
     async def add_new_browser_context_to_pool(self):
+        logger.info('add_new_browser_context_to_pool() --00')
         if self.prepare_to_restart:
             return
-
+        logger.info('add_new_browser_context_to_pool() --01')
         context = await (
             self.agent.chrome_process_mgr.browser.
             createIncognitoBrowserContext())
+        logger.info('add_new_browser_context_to_pool() --02')
         context_id = context._id
-
+        logger.info('add_new_browser_context_to_pool() --03')
         rbci = RealBrowserContextInfo(
             context_id=context_id,
             browser_id=self.agent.chrome_process_mgr.rbi.browser_id,
             node_name=self.agent.chrome_process_mgr.rbi.node_info.node_name,
             agent_url=self.agent.agent_url
         )
+        logger.info('add_new_browser_context_to_pool() --04')
         await self.agent.storage.add_free_browser_context(rbci)
-        self.contexts.append(rbci)
+        logger.info('add_new_browser_context_to_pool() --05')
+        self.contexts[context_id] = rbci
 
     async def delete_all_context_from_pool(self):
-        for rbci in self.contexts:
+        for rbci in self.contexts.values():
             await self.agent.storage.remove_free_browser_context(rbci)
         self.contexts.clear()
 
@@ -216,3 +253,4 @@ class BrowserContextManager:
         for context in self.agent.chrome_process_mgr.browser.browserContexts:
             if context._id == context_id:
                 await context.close()
+        self.contexts.pop(context_id, None)

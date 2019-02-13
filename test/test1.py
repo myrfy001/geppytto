@@ -14,12 +14,13 @@ async def main(name):
     async def do_one_req():
         try:
             print(name, '='*10)
-            # browser = await connect({'browserWSEndpoint': f'ws://10.60.81.138:9990/devtools/browser/{str(uuid.uuid4())}'}, logLevel=logging.DEBUG)
-            browser = await connect({'browserWSEndpoint': f'ws://127.0.0.1:9990/devtools/browser/{str(uuid.uuid4())}'}, logLevel=logging.DEBUG)
-            page = await browser.newPage()
-            await page.goto('http://example.com', timeout=10000)
+            browser = await connect({'browserWSEndpoint': f'ws://10.60.81.137:9991/devtools/browser/29c3a69a-2eac-4ed2-a8f2-d70e91951e90'}, logLevel=logging.DEBUG)
+            # browser = await connect({'browserWSEndpoint': 'ws://127.0.0.1:9990/devtools/browser/a2dceffb-8f80-4fdd-bef7-149aa9da9fd6'}, logLevel=logging.INFO)
+            ctx = await browser.createIncognitoBrowserContext()
+            page = await ctx.newPage()
+            await page.goto('http://taobao.com', timeout=10000)
             await page.screenshot({'path': 'example.png'})
-            await page.close()
+            await ctx.close()
             await browser.disconnect()
             # await asyncio.sleep(5)
             print(name, '*'*10)

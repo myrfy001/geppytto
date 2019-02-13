@@ -172,11 +172,13 @@ WORKDIR $application_directory
 COPY requirements.txt .
 RUN pip install --no-cache -r requirements.txt
 
+
+RUN apt-get update && apt-get install -y gdb
+
 # Bundle app source
 COPY . .
 
-# Cleanup
-RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 
 # Add user
 RUN groupadd -r geppytto && useradd -r -g geppytto -G audio,video geppytto \

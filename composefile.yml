@@ -6,17 +6,18 @@ services:
     command: ["python", "geppytto/run.py", "--redis-addr=geppytto_redis:6379"]
     dns: 8.8.8.8
     environment:
-      - PYPPETEER_HOME=/data/pyppetter
+      - PYPPETEER_HOME=/data/pyppeteer
       - GEPPYTTO_NODE_NAME={{.Node.Hostname}}
     volumes:
-      - /data/geppytto/pyppetter:/data/pyppetter
+      - /data/geppytto/pyppeteer:/data/pyppeteer
     deploy:
       mode: global
     ports:
       - 9990:9990
     networks:
       - geppytto_net
-
+    cap_add:
+        - SYS_PTRACE
 
 
 

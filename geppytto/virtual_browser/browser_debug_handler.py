@@ -8,7 +8,7 @@ import json
 import websockets
 import asyncio
 import aiohttp
-
+import uuid
 import logging
 logger = logging.getLogger()
 
@@ -22,6 +22,7 @@ class BrowserDebugHandler:
         self.request = request
         self.client_ws = client_ws
         self.kwargs = kwargs
+        self.uuid = str(uuid.uuid4())
 
     async def handle(self):
         browser_name = self.request.raw_args.get('browser_name')
@@ -134,4 +135,5 @@ class BrowserDebugHandler:
 
 
 class BrowserProtocolHandler:
-    pass
+    def __init__(self):
+        self.uuid = str(uuid.uuid4())

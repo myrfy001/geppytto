@@ -17,14 +17,7 @@ from geppytto.utils import get_ip  # noqa
 from geppytto.models import NodeInfo  # noqa
 
 if __name__ == '__main__':
-    logging.getLogger('websockets').setLevel(logging.CRITICAL)
-    _logger = logging.getLogger('geppytto')
-    _log_handler = logging.StreamHandler()
-    _log_handler.setLevel(logging.INFO)
-    _logger.addHandler(_log_handler)
-    _logger.propagate = False
-
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(filename='example-main.log', level=logging.INFO)
 
     parser = argparse.ArgumentParser(
         description='Geppytto -- Build your headless chrome cluster')

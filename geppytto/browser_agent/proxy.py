@@ -5,6 +5,8 @@ import asyncio
 import json
 import time
 import logging
+import traceback
+import uuid
 
 import websockets
 import sanic
@@ -15,6 +17,8 @@ from geppytto.websocket_proxy import WebsocketProxyWorker
 
 
 logger = logging.getLogger()
+
+fo = open('log_agent_proxy.log', 'w')
 
 
 class DevProtocolProxy:
@@ -34,38 +38,58 @@ class DevProtocolProxy:
             self, request, client_ws, real_browser_id):
         try:
             self.connection_count += 1
+            logger.info(f'connection_count +1 now={self.connection_count}\n')
             logger.debug('new agent browser connection')
             target_contextid = request.headers.get(
                 'x-geppytto-browser-context-id', None)
-            browser_ws = await websockets.connect(self.browser_debug_url)
+            logger.info(f'_browser_websocket_connection_handler--1')
+            browser_ws = await asyncio.wait_for(
+                websockets.connect(self.browser_debug_url), timeout=2)
+            logger.info(f'_browser_websocket_connection_handler--2')
             protocol_handler = BrowserProtocolHandler(
                 self.agent, client_ws, browser_ws, target_contextid)
+            logger.info(f'_browser_websocket_connection_handler--3')
             proxy_worker = WebsocketProxyWorker(
                 'Agent Browser Debug Proxy',
                 client_ws, browser_ws, protocol_handler=protocol_handler)
+            logger.info(f'_browser_websocket_connection_handler--4')
             await proxy_worker.run()
+            logger.info(f'_browser_websocket_connection_handler--5')
             await proxy_worker.close()
+            logger.info(f'_browser_websocket_connection_handler--6')
             logger.info('agent browser connection closeing')
             if self.agent.browser_name is None:
-                await self.context_mgr.close_context_by_id(target_contextid)
-                await self.context_mgr.add_new_browser_context_to_pool()
+                logger.info(f'_browser_websocket_connection_handler--7')
+                try:
+                    await asyncio.wait_for(
+                        self.context_mgr.close_context_by_id(
+                            target_contextid), 2)
+                except asyncio.TimeoutError:
+                    pass
+                logger.info(f'_browser_websocket_connection_handler--8')
+                await asyncio.wait_for(
+                    self.context_mgr.add_new_browser_context_to_pool(), 10)
+                logger.info(f'_browser_websocket_connection_handler--9')
                 logger.info(
                     'agent created new browser context to replace the '
                     'closed one')
         except Exception:
+            logger.info(f'_browser_websocket_connection_handler--10')
             logger.exception('_browser_websocket_connection_handler')
         finally:
             self.connection_count -= 1
+            logger.info(f'connection_count -1 now={self.connection_count}')
             self.last_connection_close_time = time.time()
 
     async def _page_websocket_connection_handler(
             self, request, client_ws, page_id):
         try:
             self.connection_count += 1
+            logger.info(f'connection_count +1 now={self.connection_count}')
             logger.debug('new agent page connection')
             ws_addr = self.page_debug_url_prefix+page_id
             logger.debug(f'agent connecting to browser at {ws_addr}')
-            browser_ws = await websockets.connect(ws_addr)
+            browser_ws = await asyncio.wait_for(websockets.connect(ws_addr), 2)
             protocol_handler = PageProtocolHandler()
             proxy_worker = WebsocketProxyWorker(
                 'Agent Page Debug Proxy',
@@ -77,6 +101,7 @@ class DevProtocolProxy:
             logger.exception('_page_websocket_connection_handler')
         finally:
             self.connection_count -= 1
+            logger.info(f'connection_count -1 now={self.connection_count}')
             self.last_connection_close_time = time.time()
 
     async def _check_id_handler(self, request):
@@ -108,107 +133,135 @@ class BrowserProtocolHandler:
         self.req_buf = {}
         self.agent = agent
         self.target_id_for_this_context = set()
+        self.uuid = str(uuid.uuid4())
 
     async def handle_c2b(self, req_data):
-        req_data = json.loads(req_data)
-        id_ = req_data.get('id')
-        if id_ is not None:
-            self.req_buf[id_] = req_data
+        try:
+            req_data = json.loads(req_data)
+            id_ = req_data.get('id')
+            if id_ is not None:
+                self.req_buf[id_] = req_data
 
-        ######################################
-        # Write logic for all browser below
-        ######################################
-        if self.target_contextid is None:
+            ######################################
+            # Write logic for all browser below
+            ######################################
+            if self.target_contextid is None:
+                return json.dumps(req_data)
+
+            ######################################
+            # Write logic for free browser below
+            ######################################
+
+            # Hijack Target.getBrowserContexts to make the client think there is
+            # only one default context
+            if req_data.get('method') == 'Target.getBrowserContexts':
+                logger.debug('Hijack request Target.getBrowserContexts')
+                logger.info(f'{self.uuid}handle_c2b --01\n')
+                await self.client_ws.send(
+                    '{"id":'+str(id_)+',"result":{"browserContextIds":[]}}')
+                logger.info(f'{self.uuid}handle_c2b --02\n')
+                del self.req_buf[id_]
+                return None
+
+            if req_data.get('method') == 'Target.createBrowserContext':
+                logger.debug('Modify request Target.createBrowserContext')
+                logger.info(f'{self.uuid}handle_c2b --03\n')
+                await self.client_ws.send(
+                    'Target.createBrowserContext Not Allowed For Geppytto '
+                    'Free Browser')
+                logger.info(f'{self.uuid}handle_c2b --04\n')
+                del self.req_buf[id_]
+                return None
+            if req_data.get('method') == 'Target.createTarget':
+                logger.debug('Modify request Target.createTarget')
+                req_data['params']['browserContextId'] = self.target_contextid
+
+            if req_data.get('method') == 'Browser.close':
+                logger.info(f'{self.uuid}handle_c2b --05\n')
+                await self.client_ws.send(
+                    '{"id":'+str(id_)+',"result":{}')
+                logger.info(f'{self.uuid}handle_c2b --06\n')
+                del self.req_buf[id_]
+                return None
             return json.dumps(req_data)
-
-        ######################################
-        # Write logic for free browser below
-        ######################################
-
-        # Hijack Target.getBrowserContexts to make the client think there is
-        # only one default context
-        if req_data.get('method') == 'Target.getBrowserContexts':
-            logger.debug('Hijack request Target.getBrowserContexts')
-            await self.client_ws.send(
-                '{"id":'+str(id_)+',"result":{"browserContextIds":[]}}')
-            del self.req_buf[id_]
-            return None
-
-        if req_data.get('method') == 'Target.createBrowserContext':
-            logger.debug('Modify request Target.createBrowserContext')
-            await self.client_ws.send(
-                'Target.createBrowserContext Not Allowed For Geppytto '
-                'Free Browser')
-            del self.req_buf[id_]
-            return None
-        if req_data.get('method') == 'Target.createTarget':
-            logger.debug('Modify request Target.createTarget')
-            req_data['params']['browserContextId'] = self.target_contextid
-
-        if req_data.get('method') == 'Browser.close':
-            await self.client_ws.send(
-                '{"id":'+str(id_)+',"result":{}')
-            del self.req_buf[id_]
-            return None
-        return json.dumps(req_data)
+        except:
+            logger.info(f'{self.uuid}handle_c2b exception\n')
+            logger.info(traceback.format_exc())
+        finally:
+            logger.info(f'{self.uuid}handle_c2b finish\n')
 
     async def handle_b2c(self, resp_data):
-        resp_data = json.loads(resp_data)
-        id_ = resp_data.get('id')
-        req_data = self.req_buf.pop(id_, {})
+        try:
+            resp_data = json.loads(resp_data)
+            id_ = resp_data.get('id')
+            req_data = self.req_buf.pop(id_, {})
 
-        ######################################
-        # Write logic for all browser below
-        ######################################
-        if resp_data.get('method') == 'Target.targetCreated':
-            target_id = resp_data['params']['targetInfo']['targetId']
-            await self.agent.storage.add_target_id_to_agent_url_map(
-                target_id,
-                f'ws://{self.browser_ws.host}:{self.browser_ws.port}')
+            ######################################
+            # Write logic for all browser below
+            ######################################
+            if resp_data.get('method') == 'Target.targetCreated':
+                target_id = resp_data['params']['targetInfo']['targetId']
+                logger.info(f'{self.uuid}handle_b2c --01\n')
+                await self.agent.storage.add_target_id_to_agent_url_map(
+                    target_id,
+                    f'ws://{self.browser_ws.host}:{self.browser_ws.port}')
+                logger.info(f'{self.uuid}handle_b2c --02\n')
 
-        if resp_data.get('method') == 'Target.targetDestroyed':
-            target_id = resp_data['params']['targetId']
-            await self.agent.storage.delete_agent_url_by_target_id(target_id)
+            if resp_data.get('method') == 'Target.targetDestroyed':
+                target_id = resp_data['params']['targetId']
+                logger.info(f'{self.uuid}handle_b2c --03\n')
+                await self.agent.storage.delete_agent_url_by_target_id(target_id)
+                logger.info(f'{self.uuid}handle_b2c --04\n')
 
-        if self.target_contextid is None:
+            if self.target_contextid is None:
+                logger.info(f'{self.uuid}handle_b2c --05\n')
+                return json.dumps(resp_data)
+
+            ######################################
+            # Write logic for free browser below
+            ######################################
+
+            if resp_data.get('method') == 'Target.targetCreated':
+                target_id = resp_data['params']['targetInfo']['targetId']
+                if not resp_data['params']['targetInfo'].get(
+                        'browserContextId') == self.target_contextid:
+                    # block targets that not related to current context
+                    logger.debug(
+                        f'Blocked Target.targetCreated Event {resp_data}')
+                    logger.info(f'{self.uuid}handle_b2c --06\n')
+                    return None
+                else:
+                    # because Target.targetDestroyed don't contain browserContextId
+                    # we must save which one belongs to this context
+                    self.target_id_for_this_context.add(target_id)
+
+            if resp_data.get('method') == 'Target.targetInfoChanged':
+                if not resp_data['params']['targetInfo'].get(
+                        'browserContextId') == self.target_contextid:
+                    # block targets that not related to current context
+                    logger.debug(
+                        f'Blocked Target.targetInfoChanged Event {resp_data}')
+                    logger.info(f'{self.uuid}handle_b2c --07\n')
+                    return None
+
+            if resp_data.get('method') == 'Target.targetDestroyed':
+                target_id = resp_data['params']['targetId']
+
+                if target_id not in self.target_id_for_this_context:
+                    # block targets that not related to current context
+                    logger.debug(
+                        f'Blocked Target.targetDestroyed Event {resp_data}')
+                    logger.info(f'{self.uuid}handle_b2c --08\n')
+                    return None
+                else:
+                    self.target_id_for_this_context.remove(target_id)
+            logger.info(f'{self.uuid}handle_b2c --09\n')
             return json.dumps(resp_data)
-
-        ######################################
-        # Write logic for free browser below
-        ######################################
-
-        if resp_data.get('method') == 'Target.targetCreated':
-            target_id = resp_data['params']['targetInfo']['targetId']
-            if not resp_data['params']['targetInfo'].get(
-                    'browserContextId') == self.target_contextid:
-                # block targets that not related to current context
-                logger.debug(f'Blocked Target.targetCreated Event {resp_data}')
-                return None
-            else:
-                # because Target.targetDestroyed don't contain browserContextId
-                # we must save which one belongs to this context
-                self.target_id_for_this_context.add(target_id)
-
-        if resp_data.get('method') == 'Target.targetInfoChanged':
-            if not resp_data['params']['targetInfo'].get(
-                    'browserContextId') == self.target_contextid:
-                # block targets that not related to current context
-                logger.debug(
-                    f'Blocked Target.targetInfoChanged Event {resp_data}')
-                return None
-
-        if resp_data.get('method') == 'Target.targetDestroyed':
-            target_id = resp_data['params']['targetId']
-
-            if target_id not in self.target_id_for_this_context:
-                # block targets that not related to current context
-                logger.debug(
-                    f'Blocked Target.targetDestroyed Event {resp_data}')
-                return None
-            else:
-                self.target_id_for_this_context.remove(target_id)
-
-        return json.dumps(resp_data)
+        except:
+            logger.info(f'{self.uuid}handle_b2c exception\n')
+            logger.info(traceback.format_exc())
+        finally:
+            logger.info(f'{self.uuid}handle_b2c finish\n')
 
 
 class PageProtocolHandler:

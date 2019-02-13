@@ -7,12 +7,15 @@ import atexit
 
 started_agents = {}
 started_named_browsers = {}
+geppytto_is_exiting = False
 
 
 async def _wait_agent_close_task(proc, browser_name):
     await proc.wait()
     if browser_name is not None:
         del started_named_browsers[browser_name]
+    elif not geppytto_is_exiting:
+        await start_new_agent(started_agents[proc.pid]['cli_args'])
     del started_agents[proc.pid]
 
 
@@ -36,7 +39,9 @@ async def start_new_agent(cli_args: dict):
 
     r = await asyncio.create_subprocess_exec(*args)
 
-    started_agents[r.pid] = r
+    started_agents[r.pid] = {
+        'process_handle': r,
+        'cli_args': cli_args}
     if browser_name is not None:
         started_named_browsers[cli_args['browser_name']] = r
     asyncio.ensure_future(_wait_agent_close_task(r, browser_name))
@@ -44,5 +49,7 @@ async def start_new_agent(cli_args: dict):
 
 @atexit.register
 def close_all_agents():
-    for pid, proc in started_agents.items():
-        proc.terminate()
+    global geppytto_is_exiting
+    geppytto_is_exiting = True
+    for pid, proc_info in started_agents.items():
+        proc_info['process_handle'].terminate()

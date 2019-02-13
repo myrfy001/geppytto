@@ -9,14 +9,9 @@ import logging
 logger = logging.getLogger()
 
 if __name__ == '__main__':
-    logging.getLogger('websockets').setLevel(logging.CRITICAL)
-    _logger = logging.getLogger('geppytto')
-    _log_handler = logging.StreamHandler()
-    _log_handler.setLevel(logging.INFO)
-    _logger.addHandler(_log_handler)
-    _logger.propagate = False
 
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(filename='example.log',
+                        level=logging.INFO, format='%(asctime)s %(message)s')
 
     parser = argparse.ArgumentParser(
         description='Geppytto chrome launcher')
