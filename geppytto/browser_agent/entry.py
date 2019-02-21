@@ -4,32 +4,86 @@ import importlib
 import asyncio
 import argparse
 import sys
-
+import json
 import logging
-logger = logging.getLogger()
 
-if __name__ == '__main__':
 
-    logging.basicConfig(filename='example.log',
-                        level=logging.INFO, format='%(asctime)s %(message)s')
+from geppytto.api_client.v1 import GeppyttoApiClient
+from geppytto.browser_agent import AgentSharedVars as ASV
+from geppytto.browser_agent.back_ground_task import (
+    BackgroundTaskManager, BgtCheckAndUpdateLastTime,
+    BgtAddMissingFreeBrowsers)
+from geppytto.settings import AGENT_ACTIVATE_REPORT_INTERVAL, BROWSER_PER_AGENT
+from .browser_pool import BrowserPool
+from .api.agent_server import start_server
 
-    parser = argparse.ArgumentParser(
-        description='Geppytto chrome launcher')
-    parser.add_argument('--browser-name', type=str, default=None)
-    parser.add_argument('--node-name', type=str)
-    parser.add_argument('--redis-addr', type=str)
-    parser.add_argument('--user-data-dir', type=str)
-    parser.add_argument('--max-browser-context-count', type=int)
+logger = logging.getLogger(__name__)
 
-    args = parser.parse_args()
 
-    sys.modules['geppytto_agent_global_info'] = {
-        'cli_args': args
-    }
+async def agent_main(args):
 
-    subprocess_main = importlib.import_module(
-        'geppytto.browser_agent.service').subprocess_main
-    loop = asyncio.get_event_loop()
+    api_client = GeppyttoApiClient(args.api_server)
+    ASV.api_client = api_client
+    ASV.host = args.host
+    ASV.port = args.port
+    ASV.node_name = args.node_name
+    ASV.soft_exit = False
+    ASV.advertise_address = args.advertise_address
+    ASV.browser_pool = BrowserPool()
 
-    loop.run_until_complete(subprocess_main(args))
-    logger.info('Browser proxy is exiting')
+    node_info = await api_client.get_node_info(name=args.node_name)
+    if node_info['code'] != 200:
+        raise Exception("can't get node info")
+    node_info = node_info['data']
+    ASV.is_node_steady = node_info['is_steady']
+    ASV.node_id = node_info['id']
+    await bind_self_to_agent_slot()
+    start_background_task()
+
+    start_server()
+
+    while ASV.soft_exit is False:
+        await asyncio.sleep(1)
+
+
+async def bind_self_to_agent_slot():
+    while ASV.running:
+        if ASV.is_node_steady:
+            free_agent_slot = await (
+                ASV.api_client.get_free_agent_slot(ASV.node_id))
+            agent_info = free_agent_slot['data']
+            if agent_info is None:
+                logger.info('No free agent slot on this node')
+                await asyncio.sleep(6)
+                continue
+
+            ASV.agent_id = agent_info['id']
+            ASV.agent_name = agent_info['name']
+            ASV.user_id = agent_info['user_id']
+            ASV.last_ack_time = agent_info['last_ack_time']
+
+            ret = await ASV.api_client.update_agent_advertise_address(
+                ASV.agent_id, ASV.advertise_address)
+            if ret['data'] is not True:
+                continue
+
+            logger.info(
+                'Successfully bounded to agent slot:' + json.dumps(agent_info))
+
+            break
+
+        else:
+            pass
+
+
+def start_background_task():
+    if ASV.bgt_manager is None:
+        ASV.bgt_manager = BackgroundTaskManager()
+
+    check_update_last_ack_time_task = BgtCheckAndUpdateLastTime()
+    add_missinf_free_browser = BgtAddMissingFreeBrowsers()
+    # TODO : Add user delete checking
+    ASV.bgt_manager.launch_bg_task(
+        check_update_last_ack_time_task, AGENT_ACTIVATE_REPORT_INTERVAL)
+    ASV.bgt_manager.launch_bg_task(
+        add_missinf_free_browser, AGENT_ACTIVATE_REPORT_INTERVAL)

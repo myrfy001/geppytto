@@ -56,3 +56,12 @@ def create_simple_dataclass_from_dict(
             value = typ(value)
         buffer[field.name] = value
     return dataclass(**buffer)
+
+
+def parse_bool(s):
+    b = bool(s)
+    if b is False:
+        return False
+    if str(s).lower() in ('false', '0', 'f'):
+        return False
+    return True

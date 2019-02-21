@@ -5,25 +5,22 @@ from aredis import StrictRedis
 import dataclasses as dc
 import json
 
-from geppytto.models import RealBrowserInfo, NodeInfo, RealBrowserContextInfo
+from geppytto.models import BrowserInfo, NodeInfo, RealBrowserContextInfo
+
+REDIS_KEY_PREFIX = 'geppytto'
+NODE_INFO_SET_KEY_NAME = f'{REDIS_KEY_PREFIX}:node_info_set'
+NODE_INFO_HASH_PREFIX = f'{REDIS_KEY_PREFIX}:node_info'
+NODE_FREE_BROWSER_TICKET_SET_PREIFX = f'{REDIS_KEY_PREFIX}:free_browser_set'
 
 
-REAL_BROWSER_INFO_LIST_KEY_NAME = 'real_browser_info_keys'
-NODE_INFO_LIST_KEY_NAME = 'node_info_keys'
-FREE_BROWSER_CONTEXT_SET = 'free_browser_context_set'
-NAMED_BROWSER_HASH_KEY_NAME = 'named_browsers'
-TARGET_ID_TO_AGENT_URL_MAP_PREFIX = 'tgt_id_to_agent_url'
 
-
-class BaseStorageAccrssor:
-    pass
 
 
 class RedisStorageAccessor(BaseStorageAccrssor):
     def __init__(self, host, port):
         self.client = StrictRedis(host=host, port=port, decode_responses=True)
 
-    async def register_real_browser(self, browser: RealBrowserInfo):
+    async def register_real_browser(self, browser: BrowserInfo):
 
         # save browser info
         node_name = browser.node_info.node_name
@@ -37,7 +34,7 @@ class RedisStorageAccessor(BaseStorageAccrssor):
         await self.client.sadd(
             REAL_BROWSER_INFO_LIST_KEY_NAME, real_browser_info_key_name)
 
-    async def remove_real_browser(self, browser: RealBrowserInfo):
+    async def remove_real_browser(self, browser: BrowserInfo):
         node_name = browser.node_info.node_name
         real_browser_info_key_name = (
             f'real_browser_info:{node_name}:{browser.browser_id}')
@@ -65,93 +62,31 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             selected_browsers.append(browser)
         return selected_browsers
 
-    async def get_real_browser_info(
-            self, node: str = None, browser_id: str = None,
-            fields: Optional[List[str]] = None):
-
-        '''Get real browser info by provided parmas, if no params provided,
-        return all real browsers.
-        :param fields: list of fields to get, if is None, get all fields
-        '''
-
-        selected_browsers = await self._get_real_browser_keys(node, browser_id)
-        ret = await self._fetch_redis_hashes(
-            keys=selected_browsers, fields=fields)
-
-        ret_ = []
-        for r in ret:
-            r['node_info'] = json.loads(r['node_info'])
-            ret_.append(RealBrowserInfo(**r))
-        return ret_
-
-    async def _fetch_redis_hashes(
-            self, keys: List[str], fields: Optional[List[str]] = None,
-    ) -> (List, List):
-
-        async with await self.client.pipeline(transaction=False) as pipe:
-            for key in keys:
-                if fields is None:
-                    await pipe.hgetall(key)
-                else:
-                    await pipe.hmget(key, fields)
-            pipe_rets = await pipe.execute()
-
-            ret = []
-            for idx, pipe_ret in enumerate(pipe_rets[::2]):
-                if pipe_ret is None:
-                    continue
-                if fields is None:
-                    if pipe_ret:
-                        # hgetall returns a dict
-                        ret.append(pipe_ret)
-                else:
-                    # hmget returns a tuple
-                    tmp_dict = dict(zip(fields, pipe_ret))
-                    if tmp_dict:
-                        ret.append(tmp_dict)
-        return ret
-
     async def register_node(self, node: NodeInfo):
         # save node info
-        node_info_key_name = f'node_info:{node.node_name}'
+        node_info_key_name = f'{NODE_INFO_HASH_PREFIX}:{node.node_name}'
         await self.client.hmset(node_info_key_name, dc.asdict(node))
 
-        # add the above key name to a set so we can get all keys' name
+        # add the node name to a set so we can get all keys' name
         await self.client.sadd(
-            NODE_INFO_LIST_KEY_NAME, node_info_key_name)
+            NODE_INFO_SET_KEY_NAME, node.node_name)
 
-    async def get_node_info(
-            self, node: str, fields: Optional[List[str]] = None):
-        ret = await self._fetch_redis_hashes(
-            keys=[f'node_info:{node}'], fields=fields)
+    async def get_node_info(self, node_name: str):
+        ret = await self.client.hgetall(f'{NODE_INFO_HASH_PREFIX}:{node_name}')
         if ret:
-            return NodeInfo(**(ret[0]))
+            return NodeInfo(**ret)
         else:
             return None
 
-    async def add_free_browser_context(self, rbci: RealBrowserContextInfo):
-        item = (
-            f'{rbci.node_name}:{rbci.context_id}:'
-            f'{rbci.browser_id}:{rbci.agent_url}')
-
-        await self.client.sadd(FREE_BROWSER_CONTEXT_SET, item)
-
-    async def remove_free_browser_context(self, rbci: RealBrowserContextInfo):
-        item = (
-            f'{rbci.node_name}:{rbci.context_id}:'
-            f'{rbci.browser_id}:{rbci.agent_url}')
-
-        await self.client.srem(FREE_BROWSER_CONTEXT_SET, item)
-
-    async def get_free_browser_context(self, node_name: Optional[str] = None):
+    async def get_free_browser(self, node_name: Optional[str] = None):
         if node_name is None:
-            context_info = await self.client.spop(FREE_BROWSER_CONTEXT_SET)
+            context_info = await self.client.spop(FREE_BROWSER_SET)
         else:
-            all_contexts = await self.client.smembers(FREE_BROWSER_CONTEXT_SET)
+            all_contexts = await self.client.smembers(FREE_BROWSER_SET)
             for context_info in all_contexts:
                 if context_info.starswith(node_name):
                     rem_count = await self.client.srem(
-                        FREE_BROWSER_CONTEXT_SET, context_info)
+                        FREE_BROWSER_SET, context_info)
                     if rem_count == 1:
                         # If we can remove the item, it means that we got this
                         # item, otherwise, the item maybe gotten by others
@@ -169,7 +104,7 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             node_name=node_name, context_id=context_id, browser_id=browser_id,
             agent_url=agent_url)
 
-    async def register_named_browser(self, rbi: RealBrowserInfo):
+    async def register_named_browser(self, rbi: BrowserInfo):
 
         data = f'{rbi.node_info.node_name}:{rbi.browser_id}'
         await self.register_real_browser(rbi)
@@ -193,19 +128,3 @@ class RedisStorageAccessor(BaseStorageAccrssor):
             node_name, browser_id = v.split(':')
             ret[k] = {'node_name': node_name, 'browser_id': browser_id}
         return ret
-
-    async def add_target_id_to_agent_url_map(
-            self, target_id: str, agent_url: str):
-        await self.client.set(
-            f'{TARGET_ID_TO_AGENT_URL_MAP_PREFIX}:{target_id}',
-            agent_url, ex=864000)
-
-    async def get_agent_url_by_target_id(
-            self, target_id: str):
-        return await self.client.get(
-            f'{TARGET_ID_TO_AGENT_URL_MAP_PREFIX}:{target_id}')
-
-    async def delete_agent_url_by_target_id(
-            self, target_id: str):
-        await self.client.delete(
-            f'{TARGET_ID_TO_AGENT_URL_MAP_PREFIX}:{target_id}')

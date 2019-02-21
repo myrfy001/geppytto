@@ -5,46 +5,36 @@ import sys
 from os.path import abspath, dirname, join
 import atexit
 
+
+class AgentSharedVars:
+
+    host = None
+    port = None
+
+    agent_id = None
+    agent_name = None
+    advertise_address = None
+    user_id = None
+
+    api_client = None
+    node_name = None
+    node_id = None
+    is_node_steady = None
+    last_ack_time = None
+
+    running = True
+    soft_exit = False
+
+    bgt_manager = None
+
+    browser_pool = None
+
+    sanic_app = None
+
+
 started_agents = {}
 started_named_browsers = {}
 geppytto_is_exiting = False
-
-
-async def _wait_agent_close_task(proc, browser_name):
-    await proc.wait()
-    if browser_name is not None:
-        del started_named_browsers[browser_name]
-    elif not geppytto_is_exiting:
-        await start_new_agent(started_agents[proc.pid]['cli_args'])
-    del started_agents[proc.pid]
-
-
-async def start_new_agent(cli_args: dict):
-    args = ['python', '-m', 'geppytto.browser_agent.entry',
-            '--node-name', cli_args['node_name'],
-            '--redis-addr', cli_args['redis_addr']]
-
-    if 'max_browser_context_count' in cli_args:
-        args.extend(['--max-browser-context-count',
-                     str(cli_args['max_browser_context_count'])])
-    if 'user_data_dir' in cli_args:
-        args.extend(['--user-data-dir', cli_args['user_data_dir']])
-    if 'browser_name' in cli_args:
-        browser_name = cli_args['browser_name']
-        if browser_name in started_named_browsers:
-            return
-        args.extend(['--browser-name', browser_name])
-    else:
-        browser_name = None
-
-    r = await asyncio.create_subprocess_exec(*args)
-
-    started_agents[r.pid] = {
-        'process_handle': r,
-        'cli_args': cli_args}
-    if browser_name is not None:
-        started_named_browsers[cli_args['browser_name']] = r
-    asyncio.ensure_future(_wait_agent_close_task(r, browser_name))
 
 
 @atexit.register
