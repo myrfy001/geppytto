@@ -29,3 +29,4 @@ uvloop==0.11.3
 websockets==5.0.1
 wrapt==1.10.11
 yarl==1.2.6
+ttlru-dict==1.0.0

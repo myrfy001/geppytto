@@ -40,6 +40,12 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             await cursor.execute(sql, args)
             return await cursor.fetchone()
 
+    async def _execute_fetch_all(self, sql, args):
+        with await self.pool as conn:
+            cursor = await conn.cursor(aiomysql.DictCursor)
+            await cursor.execute(sql, args)
+            return await cursor.fetchall()
+
     async def _execute_last_recordset_fetchone(self, sql, args):
         with await self.pool as conn:
             cursor = await conn.cursor(aiomysql.DictCursor)
@@ -63,9 +69,9 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             START TRANSACTION;
             set @id=null,@name=null,@advertise_address=null,@user_id=null,@node_id=null,@last_ack_time=null;
 
-            select id, name, advertise_address, user_id, node_id into 
+            select id, name, advertise_address, user_id, node_id into
                 @id, @name, @advertise_address, @user_id, @node_id
-            from agent where node_id = %s and last_ack_time < %s 
+            from agent where node_id = %s and last_ack_time < %s
                order by last_ack_time limit 1 for update;
 
             set @last_ack_time=%s;
@@ -111,19 +117,19 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
                                   agent_id, is_steady))
         return True
 
-    async def get_free_browser(
+    async def pop_free_browser(
             self, agent_id: str = None, user_id: str = None):
         if agent_id is not None:
             sql = '''
             START TRANSACTION;
             set @id=null,@adv_addr=null,@user_id=null,@agent_id=null,@is_steady=null;
             select id, advertise_address, user_id, agent_id, is_steady
-                into 
+                into
                 @id, @adv_addr, @user_id, @agent_id, @is_steady
                 from free_browser where agent_id = %s limit 1;
             delete from free_browser where id = @id;
             COMMIT;
-            select @id, @adv_addr, @user_id, @agent_id, @is_steady;
+            select @id as id, @adv_addr as advertise_address, @user_id as user_id, @agent_id as agent_id, @is_steady as is_steady;
             '''
 
             return await self._execute_last_recordset_fetchone(sql, (agent_id,))
@@ -133,11 +139,44 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             START TRANSACTION;
             set @id=null,@adv_addr=null,@user_id=null,@agent_id=null,@is_steady=null;
             select id, advertise_address, user_id, agent_id, is_steady
-                into 
+                into
                 @id, @adv_addr, @user_id, @agent_id, @is_steady
                 from free_browser  where user_id = %s order by is_steady DESC limit 1;
             delete from free_browser where id = @id;
             COMMIT;
-            select @id, @adv_addr, @user_id, @agent_id, @is_steady;
+            select @id as id, @adv_addr as advertise_address, @user_id as user_id, @agent_id as agent_id, @is_steady as is_steady;
             '''
             return await self._execute_last_recordset_fetchone(sql, (user_id,))
+
+    async def get_free_browser(
+            self, agent_id: str = None, user_id: str = None):
+        if agent_id is not None:
+            sql = '''
+            select * from free_browser where agent_id = %s
+            '''
+            return await self._execute_fetch_all(sql, (agent_id,))
+
+        else:
+            sql = '''
+            select * from free_browser where user_id = %s
+            '''
+            return await self._execute_fetch_all(sql, (user_id,))
+
+    async def delete_free_browser(self, id_: int):
+        sql = '''
+        delete from free_browser where id = %s
+        '''
+        return await self._execute_fetch_all(sql, (id_,))
+
+    async def get_user_info(self, id_=None, name=None, access_token=None):
+        if access_token is not None:
+            sql = 'select * from user where access_token = %s'
+            val = access_token
+        elif id_ is not None:
+            sql = 'select * from user where id = %s'
+            val = id_
+        else:
+            sql = 'select * from user where name = %s'
+            val = name
+        ret = await self._execute_fetch_one(sql, (val,))
+        return ret

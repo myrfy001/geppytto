@@ -15,9 +15,9 @@ async def main(name):
         try:
             print(name, '='*10)
             # browser = await connect({'browserWSEndpoint': f'ws://10.60.81.138:9990/devtools/browser/{str(uuid.uuid4())}'}, logLevel=logging.DEBUG)
-            browser = await connect({'browserWSEndpoint': f'ws://127.0.0.1:9990/devtools/browser/{str(uuid.uuid4())}'}, logLevel=logging.DEBUG)
+            browser = await connect({'browserWSEndpoint': f'ws://127.0.0.1:9990/api/proxy/devtools/browser/{str(uuid.uuid4())}?access_token=qazwsxedc&headless=False'}, logLevel=logging.DEBUG)
             page = await browser.newPage()
-            await page.goto('http://example.com', timeout=10000)
+            await page.goto('http://taobao.com', timeout=10000)
             await page.screenshot({'path': 'example.png'})
             await page.close()
             await browser.disconnect()

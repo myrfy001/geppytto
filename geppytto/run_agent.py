@@ -13,10 +13,9 @@ import asyncio
 sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
 from geppytto.utils import get_ip  # noqa
-from geppytto.models import NodeInfo  # noqa
 
 if __name__ == '__main__':
-    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     parser = argparse.ArgumentParser(
         description='Geppytto browser agent')

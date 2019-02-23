@@ -12,8 +12,13 @@ from geppytto.api_client.v1 import GeppyttoApiClient
 from geppytto.browser_agent import AgentSharedVars as ASV
 from geppytto.browser_agent.back_ground_task import (
     BackgroundTaskManager, BgtCheckAndUpdateLastTime,
-    BgtAddMissingFreeBrowsers)
-from geppytto.settings import AGENT_ACTIVATE_REPORT_INTERVAL, BROWSER_PER_AGENT
+    BgtAddMissingFreeBrowsers, BgtKillOutOfControlBrowsers,
+    BgtCheckFreeBrowserMisMatch)
+from geppytto.settings import (
+    AGENT_ACTIVATE_REPORT_INTERVAL,
+    BROWSER_PER_AGENT,
+    AGENT_CHECK_OUT_OF_CONTROL_BROWSER_INTERVAL,
+    AGENT_CHECK_FREE_BROWSER_MISMATCH_INTERVAL)
 from .browser_pool import BrowserPool
 from .api.agent_server import start_server
 
@@ -81,9 +86,17 @@ def start_background_task():
         ASV.bgt_manager = BackgroundTaskManager()
 
     check_update_last_ack_time_task = BgtCheckAndUpdateLastTime()
-    add_missinf_free_browser = BgtAddMissingFreeBrowsers()
+    add_missinf_free_browser_task = BgtAddMissingFreeBrowsers()
+    kill_out_of_control_browser_task = BgtKillOutOfControlBrowsers()
+    check_free_browser_mismatch_task = BgtCheckFreeBrowserMisMatch()
     # TODO : Add user delete checking
     ASV.bgt_manager.launch_bg_task(
         check_update_last_ack_time_task, AGENT_ACTIVATE_REPORT_INTERVAL)
     ASV.bgt_manager.launch_bg_task(
-        add_missinf_free_browser, AGENT_ACTIVATE_REPORT_INTERVAL)
+        add_missinf_free_browser_task, AGENT_ACTIVATE_REPORT_INTERVAL)
+    ASV.bgt_manager.launch_bg_task(
+        kill_out_of_control_browser_task,
+        AGENT_CHECK_OUT_OF_CONTROL_BROWSER_INTERVAL)
+    ASV.bgt_manager.launch_bg_task(
+        check_free_browser_mismatch_task,
+        AGENT_CHECK_FREE_BROWSER_MISMATCH_INTERVAL)

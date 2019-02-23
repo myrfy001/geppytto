@@ -14,7 +14,7 @@ async def main(name):
     async def do_one_req():
         try:
             print(name, '='*10)
-            browser = await connect({'browserWSEndpoint': f'ws://10.60.81.137:9991/devtools/browser/29c3a69a-2eac-4ed2-a8f2-d70e91951e90'}, logLevel=logging.DEBUG)
+            browser = await connect({'browserWSEndpoint': f'ws://127.0.0.1:9990/api/proxy/devtools/browser/{str(uuid.uuid4())}?access_token=qazwsxedc&headless=False'}, logLevel=logging.DEBUG)
             # browser = await connect({'browserWSEndpoint': 'ws://127.0.0.1:9990/devtools/browser/a2dceffb-8f80-4fdd-bef7-149aa9da9fd6'}, logLevel=logging.INFO)
             ctx = await browser.createIncognitoBrowserContext()
             page = await ctx.newPage()
@@ -43,7 +43,7 @@ async def main(name):
             print(u)
             traceback.print_exc()
             print(u)
-        await asyncio.sleep(2)
+        # await asyncio.sleep(2)
     # await page.screenshot({'path': 'example.png'})
     # await browser.disconnect()
     # await asyncio.sleep(100000)
@@ -52,7 +52,7 @@ async def main(name):
 async def main1():
     # while 1:
     try:
-        browser = await connect({'browserWSEndpoint': f'ws://10.60.81.138:9990/devtools/browser/{str(uuid.uuid4())}'}, logLevel=logging.DEBUG)
+        browser = await connect({'browserWSEndpoint': f'ws://10.60.81.138:9990/devtools/browser/{str(uuid.uuid4())}'}, logLevel=logging.INFO)
         page = await browser.newPage()
         await page.goto('http://taobao.com')
         await page.screenshot({'path': 'example.png'})
@@ -65,12 +65,12 @@ async def main1():
 
 
 st = time.time()
-asyncio.get_event_loop().run_until_complete(asyncio.gather(
-    main('co1')
-))
 # asyncio.get_event_loop().run_until_complete(asyncio.gather(
-#     main('co1'), main('co2'), main('co3'), main('co4')
+#     main('co1')
 # ))
+asyncio.get_event_loop().run_until_complete(asyncio.gather(
+    main('co1'), main('co2'), main('co3'), main('co4')
+))
 # asyncio.get_event_loop().run_until_complete(asyncio.gather(
 #     main1()
 # ))

@@ -27,38 +27,38 @@ class WebsocketProxyWorker:
         self.loop = asyncio.get_event_loop()
 
     async def run(self):
-        futures = [
+        self.futures = [
             asyncio.ensure_future(self._client_to_browser_task()),
             asyncio.ensure_future(self._browser_to_client_task()),
         ]
         try:
             await asyncio.wait(
-                futures, return_when=asyncio.FIRST_COMPLETED)
+                self.futures, return_when=asyncio.ALL_COMPLETED)
         except asyncio.CancelledError:
             pass
 
-        await self.close()
-
-        for task in futures:
-            task.cancel()
+        for task in self.futures:
             # read the exception to suspend error
-            task.exception()
+            if task.done():
+                if not task.cancelled():
+                    task.exception()
+            else:
+                await task
+                task.exception()
 
     async def close(self):
-        try:
-            await self.client_ws.close()
-        except Exception:
-            pass
-
         try:
             await self.browser_ws.close()
         except Exception:
             pass
 
+        for task in self.futures:
+            task.cancel()
+
     async def _client_to_browser_task(self):
         try:
             async for message in self.client_ws:
-                logger.debug(f'{self.name} C->B {message}')
+                # logger.debug(f'{self.name} C->B {message}')
                 if message.startswith('$') and self._has_ctl_c2b_handler:
                     await self.protocol_handler.handle_ctl_c2b(message[1:])
                 else:
@@ -69,12 +69,12 @@ class WebsocketProxyWorker:
                     if msg is not None:
                         await self.browser_ws.send(msg)
         finally:
-            pass
+            await self.close()
 
     async def _browser_to_client_task(self):
         try:
             async for message in self.browser_ws:
-                logger.debug(f'{self.name} B->C {message}')
+                # logger.debug(f'{self.name} B->C {message}')
                 if message.startswith('$') and self._has_ctl_b2c_handler:
                     await self.protocol_handler.handle_ctl_b2c(message[1:])
                 else:
@@ -85,4 +85,4 @@ class WebsocketProxyWorker:
                     if msg is not None:
                         await self.client_ws.send(msg)
         finally:
-            pass
+            await self.close()

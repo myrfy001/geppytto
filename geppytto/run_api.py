@@ -14,11 +14,9 @@ from importlib import import_module
 sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
 from geppytto.utils import get_ip  # noqa
-from geppytto.models import NodeInfo  # noqa
 
 if __name__ == '__main__':
-    logger = logging.getLogger('geppytto')
-    logger.setLevel(logging.INFO)
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     parser = argparse.ArgumentParser(
         description='Geppytto -- Build your headless chrome cluster')

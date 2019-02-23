@@ -82,5 +82,21 @@ class BgtAddMissingFreeBrowsers(BackgroundTaskBase):
     '''
     async def run(self):
         # Put free browsers to pool
+        print('browser_pool===============')
+        print('free', ASV.browser_pool.free_browsers)
+        print('busy', ASV.browser_pool.busy_browsers)
         while not ASV.browser_pool.is_full():
+            print('Adding missing new browser to pool')
             await ASV.browser_pool.put_browser_to_pool()
+
+
+class BgtKillOutOfControlBrowsers(BackgroundTaskBase):
+    async def run(self):
+        await ASV.browser_pool.close_out_of_control_browser()
+        logger.info('kill out of control browser task finished')
+
+
+class BgtCheckFreeBrowserMisMatch(BackgroundTaskBase):
+    async def run(self):
+        await ASV.browser_pool.check_free_browser_db_mis_match()
+        logger.info('check free browser db mismatch task finished')

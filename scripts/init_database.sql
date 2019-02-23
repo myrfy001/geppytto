@@ -44,8 +44,8 @@ CREATE TABLE `user` (
   `name` char(63) NOT NULL DEFAULT '',
   `steady_agent_count` tinyint(11) NOT NULL DEFAULT '1',
   `dynamic_agent_count` int(11) NOT NULL DEFAULT '1',
-  `last_busy_time` bigint(20) NOT NULL DEFAULT '0',
+  `access_token` varchar(256) NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
-  KEY `last_busy_time` (`last_busy_time`)
+  UNIQUE KEY `access_token` (`access_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

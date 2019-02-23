@@ -5,9 +5,12 @@ from sanic import Sanic
 
 
 from geppytto.storage.mysql import MysqlStorageAccessor
-from geppytto.api_server.api.v1 import bp
+from geppytto.api_server.api.v1 import internal_bp as api_internal_bp
+from geppytto.api_server.api.proxy import bp as proxy_bp
 
-from geppytto.api_server import ApiServerSharedVars
+from geppytto.api_server import ApiServerSharedVars as ASSV
+
+from ttlru import TTLRU
 
 app = Sanic()
 
@@ -27,14 +30,16 @@ async def connect_to_mysql(args):
         loop=None
     )
     await mysql.connect()
-    ApiServerSharedVars.mysql_conn = mysql
+    ASSV.mysql_conn = mysql
 
 
 async def api_server_main(args):
 
+    ASSV.user_info_cache_by_access_token = TTLRU(size=8192, ttl=int(30e9))
     await connect_to_mysql(args)
 
-    app.blueprint(bp)
+    app.blueprint(api_internal_bp)
+    app.blueprint(proxy_bp)
     server = app.create_server(host=args.host, port=args.port)
     await server
     while 1:

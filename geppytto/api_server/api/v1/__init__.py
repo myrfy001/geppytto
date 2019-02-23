@@ -7,27 +7,34 @@ from .node import get_node_info
 from .agent import (
     get_agent_info, get_free_agent_slot, update_agent_last_ack_time,
     update_agent_advertise_address)
-from .free_browser import get_free_browser, add_free_browser
+from .free_browser import (
+    pop_free_browser, add_free_browser, get_free_browser,
+    delete_free_browser)
 from ..utils import get_err_response
 
 
-bp = Blueprint('v1', url_prefix='/api/v1')
+internal_bp = Blueprint('internal_v1', url_prefix='/api/internal/v1')
 
 
-@bp.exception(ServerError)
-def bp_exception_handler(request, exception):
+@internal_bp.exception(ServerError)
+def internal_bp_exception_handler(request, exception):
     return get_err_response(None, exception.message)
 
 
-bp.add_route(get_node_info, '/node')
+internal_bp.add_route(get_node_info, '/node')
 
-bp.add_route(get_agent_info, '/agent')
-bp.add_route(get_free_agent_slot, '/agent/get_free_agent_slot')
-bp.add_route(update_agent_last_ack_time, '/agent/update_agent_last_ack_time')
-bp.add_route(update_agent_advertise_address,
-             '/agent/update_agent_advertise_address')
+internal_bp.add_route(get_agent_info, '/agent')
+internal_bp.add_route(get_free_agent_slot, '/agent/get_free_agent_slot')
+internal_bp.add_route(update_agent_last_ack_time,
+                      '/agent/update_agent_last_ack_time')
+internal_bp.add_route(update_agent_advertise_address,
+                      '/agent/update_agent_advertise_address')
 
 
-bp.add_route(get_free_browser, '/free_browser/get_free_browser')
-bp.add_route(add_free_browser, '/free_browser/add_free_browser',
-             methods=('POST',))
+internal_bp.add_route(get_free_browser, '/free_browser/get_free_browser')
+internal_bp.add_route(pop_free_browser, '/free_browser/pop_free_browser')
+internal_bp.add_route(delete_free_browser,
+                      '/free_browser/delete_free_browser',
+                      methods=('DELETE',))
+internal_bp.add_route(add_free_browser, '/free_browser/add_free_browser',
+                      methods=('POST',))
