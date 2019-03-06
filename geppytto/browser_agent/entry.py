@@ -8,6 +8,8 @@ import json
 import logging
 
 
+from pyppeteer.launcher import executablePath
+
 from geppytto.api_client.v1 import GeppyttoApiClient
 from geppytto.browser_agent import AgentSharedVars as ASV
 from geppytto.browser_agent.back_ground_task import (
@@ -27,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 async def agent_main(args):
 
+    ASV.chrome_executable_path = args.chrome_executable_path
+    ASV.user_data_dir = args.user_data_dir
     api_client = GeppyttoApiClient(args.api_server)
     ASV.api_client = api_client
     ASV.host = args.host

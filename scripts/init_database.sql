@@ -24,7 +24,7 @@ CREATE TABLE `free_browser` (
 
 CREATE TABLE `named_browser` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
-  `name` int(11) NOT NULL,
+  `name` char(63) NOT NULL DEFAULT '',
   `user_id` int(11) NOT NULL,
   `agent_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),

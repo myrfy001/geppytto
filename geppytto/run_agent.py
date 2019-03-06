@@ -10,6 +10,8 @@ from os import environ
 
 import asyncio
 
+from pyppeteer.launcher import executablePath
+
 sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
 from geppytto.utils import get_ip  # noqa
@@ -25,7 +27,8 @@ if __name__ == '__main__':
                         default='http://localhost:9990')
     parser.add_argument('--node_name', type=str)
     parser.add_argument('--advertise_address', type=str)
-
+    parser.add_argument('--chrome-executable-path', type=str, default=None)
+    parser.add_argument('--user-data-dir', type=str, default=None)
     args = parser.parse_args()
 
     node_ip = get_ip()
@@ -40,6 +43,18 @@ if __name__ == '__main__':
         advertise_address = f'http://{advertise_address}:{args.port}'
 
         args.advertise_address = advertise_address
+
+    if args.chrome_executable_path is None:
+        chrome_executable_path_in_env = environ.get(
+            'GEPPYTTO_CHROME_EXECUTABLE_PATH', None)
+        args.chrome_executable_path = (
+            chrome_executable_path_in_env or executablePath())
+
+    if args.user_data_dir is None:
+        user_data_dir_in_env = environ.get(
+            'GEPPYTTO_BROWSER_USER_DATA_DIR', None)
+        args.user_data_dir = (
+            user_data_dir_in_env or '/data/browser_data')
 
     agent_main = import_module('geppytto.browser_agent.entry').agent_main
     loop = asyncio.get_event_loop()

@@ -10,17 +10,17 @@ async def get_free_browser(req):
     ret = await ApiServerSharedVars.mysql_conn.get_free_browser(
         agent_id, user_id)
 
-    if ret:
-        return get_ok_response(ret)
+    if ret.value:
+        return get_ok_response(ret.value)
     else:
-        return get_err_response(ret, msg='not found')
+        return get_err_response(ret.value, msg='not found')
 
 
 async def delete_free_browser(req):
     id_ = req.raw_args.get('id')
     ret = await ApiServerSharedVars.mysql_conn.get_free_browser(id_)
 
-    if ret:
+    if ret.value:
         return get_ok_response(True)
     else:
         return get_err_response(None, msg='not found')
@@ -32,10 +32,10 @@ async def pop_free_browser(req):
     ret = await ApiServerSharedVars.mysql_conn.pop_free_browser(
         agent_id, user_id)
 
-    if ret is not None:
-        return get_ok_response(ret)
+    if ret.value is not None:
+        return get_ok_response(ret.value)
     else:
-        return get_err_response(ret, msg='not found')
+        return get_err_response(ret.value, msg='not found')
 
 
 async def add_free_browser(req):
@@ -46,7 +46,7 @@ async def add_free_browser(req):
     ret = await ApiServerSharedVars.mysql_conn.add_free_browser(
         advertise_address, user_id, agent_id, is_steady)
 
-    if ret is not None:
-        return get_ok_response(ret)
+    if ret.value is not None:
+        return get_ok_response(ret.value)
     else:
-        return get_err_response(ret, msg='not found')
+        return get_err_response(ret.value, msg='not found')

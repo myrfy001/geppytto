@@ -4,10 +4,13 @@ import uuid
 import asyncio
 from typing import Dict, Any
 import logging
+import psutil
+
 from pyppeteer.launcher import Launcher
 
 from geppytto.settings import BROWSER_PER_AGENT
 from geppytto.browser_agent import AgentSharedVars as ASV
+
 
 logger = logging.getLogger()
 
@@ -17,27 +20,71 @@ class BrowserPool:
     def __init__(self):
         self.free_browsers = {}
         self.busy_browsers = {}
-        self.history_launchers = {}
 
         self.maybe_zombie_free_browsers = []
+        self.maybe_out_of_control_pids = []
+
+    async def _close_process(self, proc: psutil.Process):
+        try:
+            proc.terminate()
+            await asyncio.sleep(1)
+            try:
+                if proc.status() != psutil.STATUS_ZOMBIE:
+                    proc.kill()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=0)
+        except Exception:
+            pass
 
     async def close_out_of_control_browser(self):
         '''
         This function must be called periodically to ensure no out of control 
         browser process running
         '''
-        tmp_pids = self.history_launchers.copy()
+        import time
+        st = time.time()
+        inuse_pids = []
         for busy_browser in self.busy_browsers.values():
-            tmp_pids.pop(busy_browser.pid, None)
+            if busy_browser.pid is not None:
+                inuse_pids.append(busy_browser.pid)
 
-        for pid, should_closed_browser in tmp_pids.items():
+        # check maybe out of control and kill if they were out of control
+        for maybe_out_of_control_pid in self.maybe_out_of_control_pids:
+            if maybe_out_of_control_pid not in inuse_pids:
+                try:
+                    ps = psutil.Process(maybe_out_of_control_pid)
+                    logger.error(
+                        f'kill out of control pid={maybe_out_of_control_pid}')
+                    await self._close_process(ps)
+                except psutil.NoSuchProcess:
+                    pass
+                except Exception:
+                    logger.exception('close_out_of_control_browser')
+
+        self.maybe_out_of_control_pids.clear()
+        self_ps = psutil.Process()
+        for direct_child in self_ps.children():
+            if direct_child.exe() != ASV.chrome_executable_path:
+                continue
+            if direct_child.pid not in inuse_pids:
+                self.maybe_out_of_control_pids.append(direct_child.pid)
+
+        for ps in psutil.Process(1).children():
             try:
-                os.kill(pid, 0)
-                # No error, means the browser still alive
-                should_closed_browser.proc.kill()
-                should_closed_browser.proc.wait()
-            except OSError:
-                self.history_launchers.pop(pid, None)
+                if ps.exe() == ASV.chrome_executable_path:
+                    print(ps.exe())
+                    logger.error(
+                        f'kill orphan pid={ps.pid} cli={ps.cmdline()}')
+                    await self._close_process(ps)
+            except Exception:
+                continue
+
+        et = time.time() - st
+        print(f'out of control took {et}')
 
     def is_full(self):
         return (len(self.free_browsers) + len(self.busy_browsers)
@@ -111,26 +158,31 @@ class Browser:
         self.proxy_worker = None
         self.browser_debug_url = None
         self.pid = None
+        self.closed = False
+        self.launcher = None
 
-    async def run(self, user_data_dir: str = None, headless: bool = True):
+    async def run(self, user_data_dir: str = None, headless: bool = True,
+                  no_sandbox=True):
 
-        args = []
+        args = ['--no-sandbox']
 
         options = {
             'headless': headless,
             'args': args,
             'handleSIGINT': False,
             'handleSIGTERM': False,
-            'autoClose': False
+            'autoClose': False,
+            'executablePath': ASV.chrome_executable_path
         }
         if user_data_dir is not None:
             options['userDataDir'] = user_data_dir
 
         launcher = Launcher(options)
+        self.launcher = launcher
         browser = await launcher.launch()
         self.browser = browser
         self.pid = launcher.proc.pid
-        self.browser_pool.history_launchers[self.pid] = launcher
+        logger.info(f'successful launch browser pid={self.pid}')
         self.browser_debug_url = self.browser._connection.url
 
     async def close(self, token):
@@ -140,7 +192,24 @@ class Browser:
                 continue
             try:
                 await self.browser.close()
+                logger.info(f'successful close browser pid={self.pid}')
+                self.closed = True
                 break
             except Exception as e:
-                self.browser.proc.kill()
-                self.browser.proc.wait()
+                logger.exception(f'close browser failed pid={self.pid}')
+                self.launcher.proc.kill()
+                logger.exception(
+                    f'close browser kill signal sent pid={self.pid}')
+                self.launcher.proc.wait()
+                logger.exception(
+                    f'close browser kill wait finish pid={self.pid}')
+
+    # def __del__(self):
+    #     if not self.closed:
+    #         logger.error(f'close browser __del__ pid={self.pid}')
+    #         self.launcher.proc.kill()
+    #         logger.error(
+    #             f'close browser __del__ kill signal sent pid={self.pid}')
+    #         self.launcher.proc.wait()
+    #         logger.error(
+    #             f'close browser __del__ kill wait finish pid={self.pid}')

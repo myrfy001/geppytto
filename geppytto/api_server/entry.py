@@ -2,10 +2,13 @@
 
 import asyncio
 from sanic import Sanic
+from sanic.response import html as html_response
 
 
 from geppytto.storage.mysql import MysqlStorageAccessor
-from geppytto.api_server.api.v1 import internal_bp as api_internal_bp
+from geppytto.api_server.api.v1 import (
+    internal_bp as api_internal_bp,
+    external_bp as api_external_bp)
 from geppytto.api_server.api.proxy import bp as proxy_bp
 
 from geppytto.api_server import ApiServerSharedVars as ASSV
@@ -13,6 +16,10 @@ from geppytto.api_server import ApiServerSharedVars as ASSV
 from ttlru import TTLRU
 
 app = Sanic()
+
+
+async def health_check(request):
+    return html_response('')
 
 
 async def connect_to_mysql(args):
@@ -39,7 +46,9 @@ async def api_server_main(args):
     await connect_to_mysql(args)
 
     app.blueprint(api_internal_bp)
+    app.blueprint(api_external_bp)
     app.blueprint(proxy_bp)
+    app.add_route(health_check, '/_health')
     server = app.create_server(host=args.host, port=args.port)
     await server
     while 1:

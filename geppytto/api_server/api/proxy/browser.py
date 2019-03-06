@@ -29,13 +29,13 @@ async def get_user_info_by_access_token(access_token):
         return cached_info
 
     user_info = await ASSV.mysql_conn.get_user_info(access_token=access_token)
-    if user_info is None:
+    if user_info.value is None:
         # if the token is invalid, also cache it to prevent cache breakdown
         ASSV.user_info_cache_by_access_token[access_token] = None
         return False
 
-    ASSV.user_info_cache_by_access_token[access_token] = user_info
-    return user_info
+    ASSV.user_info_cache_by_access_token[access_token] = user_info.value
+    return user_info.value
 
 
 async def browser_websocket_connection_handler(
@@ -62,10 +62,18 @@ async def _browser_websocket_connection_handler(
     for retry in range(BROWSER_PER_AGENT):
 
         if browser_name is None:
-            browser = await pop_free_browser_for_user(user_info['id'])
+            browser = await pop_free_browser(user_id=user_info['id'])
         else:
-            browser = None
-            # TODO add named browser support
+            named_browser_info = await get_agent_id_for_named_browser(
+                user_info['id'], browser_name)
+            if named_browser_info is None:
+                await client_ws.send('No Named Browser')
+                logger.info(
+                    f'No Named Browser user:{user_info["id"]} '
+                    f'browser_name: {browser_name}')
+                return
+            browser = await pop_free_browser(
+                agent_id=named_browser_info['agent_id'])
 
         if browser is None:
             await client_ws.send('No Free Browser')
@@ -85,7 +93,10 @@ async def connect_to_agent(request, browser):
     try:
         querys = {}
         headless = request.raw_args.get('headless', True)
+        browser_name = request.raw_args.get('headless')
         querys['headless'] = headless
+        if browser_name:
+            querys['browser_name'] = headless
 
         query_string = urllib.parse.urlencode(querys)
         agent_url = f'{browser["advertise_address"]}?{query_string}'
@@ -115,9 +126,16 @@ async def run_proxy_to_agent(client_ws, browser_ws):
         logger.exception('run_proxy_to_agent')
 
 
-async def pop_free_browser_for_user(user_id: str):
-    browser = await ASSV.mysql_conn.pop_free_browser(user_id=user_id)
-    if browser['id'] is None:
+async def pop_free_browser(user_id: int = None, agent_id: int = None):
+    browser = await ASSV.mysql_conn.pop_free_browser(
+        user_id=user_id, agent_id=agent_id)
+    if browser.value['id'] is None:
         # TODO insert browser busy record
         return None
-    return browser
+    return browser.value
+
+
+async def get_agent_id_for_named_browser(user_id: int, browser_name: str):
+    named_browser = await ASSV.mysql_conn.get_named_browser(
+        user_id, browser_name)
+    return named_browser.value

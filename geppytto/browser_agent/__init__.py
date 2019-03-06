@@ -30,6 +30,8 @@ class AgentSharedVars:
     browser_pool = None
 
     sanic_app = None
+    chrome_executable_path = None
+    user_data_dir = None
 
 
 started_agents = {}

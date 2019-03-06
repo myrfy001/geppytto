@@ -1,5 +1,6 @@
 # coding:utf-8
 
+import os
 import logging
 import asyncio
 import websockets
@@ -29,10 +30,12 @@ async def _browser_websocket_connection_handler(
         return
 
     try:
-        user_data_dir = request.raw_args.get('user_data_dir')
+        browser_name = request.raw_args.get('browser_name')
         headless = parse_bool(request.raw_args.get('headless', True))
 
-        await browser.run(user_data_dir, headless)
+        if browser_name is not None:
+            user_data_dir = os.path.join(ASV.user_data_dir, browser_name)
+            await browser.run(user_data_dir, headless)
 
         browser_ws = await asyncio.wait_for(
             websockets.connect(browser.browser_debug_url), timeout=2)

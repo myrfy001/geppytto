@@ -9,7 +9,7 @@ async def get_node_info(req):
     id = req.raw_args.get('id')
     name = req.raw_args.get('name')
     ret = await ApiServerSharedVars.mysql_conn.get_node_info(id, name)
-    if ret is not None:
-        return get_ok_response(ret)
+    if ret.value is not None:
+        return get_ok_response(ret.value)
     else:
-        return get_err_response(ret, msg='not found')
+        return get_err_response(ret.value, msg='not found')

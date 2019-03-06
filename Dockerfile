@@ -145,26 +145,21 @@ RUN set -ex; \
 
 
 
-
-
-
 # Application parameters and variables
 ENV HOST=0.0.0.0
 ENV PORT=3000
 ENV application_directory=/usr/src/app
 ENV ENABLE_XVBF=true
 
-# Build Args
-ARG USE_CHROME_STABLE
 
 # Configuration for Chrome
 ENV CONNECTION_TIMEOUT=60000
 ENV CHROME_PATH=/usr/bin/google-chrome
-ENV USE_CHROME_STABLE=${USE_CHROME_STABLE}
 
 RUN mkdir -p $application_directory
 
 WORKDIR $application_directory
+
 
 
 
@@ -186,6 +181,11 @@ RUN groupadd -r geppytto && useradd -r -g geppytto -G audio,video geppytto \
   && chown -R geppytto:geppytto /home/geppytto \
   && chown -R geppytto:geppytto $application_directory
 
+RUN cd /tmp && \
+    wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    dpkg -i google-chrome-stable_current_amd64.deb && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 # It's a good idea to use dumb-init to help prevent zombie chrome processes.
 ADD https://github.com/Yelp/dumb-init/releases/download/v1.2.0/dumb-init_1.2.0_amd64 /usr/local/bin/dumb-init
 RUN chmod +x /usr/local/bin/dumb-init
@@ -196,5 +196,4 @@ USER geppytto
 # Expose the web-socket and HTTP ports
 EXPOSE 9990
 ENTRYPOINT ["dumb-init", "--"]
-ENV PYPPETEER_CHROMIUM_REVISION=599821
-CMD [ "python", "./geppytto/run.py" ]
+ENV GEPPYTTO_CHROME_EXECUTABLE_PATH=/opt/google/chrome/chrome

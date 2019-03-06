@@ -2,9 +2,14 @@
 
 import asyncio
 import sanic
+from sanic.response import html as html_response
 
 from geppytto.browser_agent import AgentSharedVars as ASV
 from .proxy import bp as proxy_bp
+
+
+async def health_check(request):
+    return html_response('')
 
 
 def start_server(loop=None):
@@ -12,5 +17,6 @@ def start_server(loop=None):
     app = sanic.Sanic()
     ASV.sanic_app = app
     app.blueprint(proxy_bp)
+    app.add_route(health_check, '/_health')
     server = app.create_server(host=ASV.host, port=ASV.port)
     ASV.server_task = loop.create_task(server)
