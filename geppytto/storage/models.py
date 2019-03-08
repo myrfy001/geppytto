@@ -3,11 +3,19 @@
 from aiomysql.cursors import DictCursor
 
 
+class BusyEventsTypeEnum:
+    ALL_BROWSER_BUSY = 1
+
+
 class BaseModel(dict):
     pass
 
 
 class UserModel(BaseModel):
+    pass
+
+
+class BusyEventModel(BaseModel):
     pass
 
 

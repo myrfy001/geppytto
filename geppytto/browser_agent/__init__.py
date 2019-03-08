@@ -33,6 +33,11 @@ class AgentSharedVars:
     chrome_executable_path = None
     user_data_dir = None
 
+    @classmethod
+    def set_soft_exit(cls):
+        cls.soft_exit = True
+        cls.bgt_manager.soft_stop()
+
 
 started_agents = {}
 started_named_browsers = {}

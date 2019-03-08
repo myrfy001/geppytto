@@ -42,5 +42,3 @@ async def update_agent_advertise_address(req):
         return get_ok_response(ret.value)
     else:
         return get_err_response(ret.value, msg='not found')
-
-update_agent_advertise_address

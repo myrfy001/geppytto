@@ -12,7 +12,7 @@ from pyppeteer.launcher import executablePath
 
 from geppytto.api_client.v1 import GeppyttoApiClient
 from geppytto.browser_agent import AgentSharedVars as ASV
-from geppytto.browser_agent.back_ground_task import (
+from geppytto.browser_agent.background_tasks import (
     BackgroundTaskManager, BgtCheckAndUpdateLastTime,
     BgtAddMissingFreeBrowsers, BgtKillOutOfControlBrowsers,
     BgtCheckFreeBrowserMisMatch)

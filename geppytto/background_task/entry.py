@@ -1,30 +1,22 @@
 # coding:utf-8
 
 import asyncio
-from sanic import Sanic
-from sanic.response import html as html_response
+
 
 from geppytto.settings import API_SERVER_CHECK_BUSY_EVENT_TIME
+from geppytto.background_task import BackgroundTaskSharedVars as BTSV
 
 from geppytto.storage.mysql import MysqlStorageAccessor
-from geppytto.api_server.api.v1 import (
-    internal_bp as api_internal_bp,
-    external_bp as api_external_bp)
 
-from geppytto.api_server.api.proxy import bp as proxy_bp
-from geppytto.api_server import ApiServerSharedVars as ASSV
 
 from geppytto.utils.background_task_mgr import (
     BackgroundTaskBase, BackgroundTaskManager)
 
+from geppytto.background_task.tasks.dynamic_agent import (
+    BgtCheckBusyEventAndAddDynamicAgent)
+
 
 from ttlru import TTLRU
-
-app = Sanic()
-
-
-async def health_check(request):
-    return html_response('')
 
 
 async def connect_to_mysql(args):
@@ -42,26 +34,27 @@ async def connect_to_mysql(args):
         loop=None
     )
     await mysql.connect()
-    ASSV.mysql_conn = mysql
+    BTSV.mysql_conn = mysql
 
 
 async def api_server_main(args):
 
-    ASSV.user_info_cache_by_access_token = TTLRU(size=8192, ttl=int(30e9))
     await connect_to_mysql(args)
 
     start_background_task()
 
-    app.blueprint(api_internal_bp)
-    app.blueprint(api_external_bp)
-    app.blueprint(proxy_bp)
-    app.add_route(health_check, '/_health')
-    server = app.create_server(host=args.host, port=args.port)
-    await server
     while 1:
         await asyncio.sleep(10000)
 
 
 def start_background_task():
-    if ASSV.bgt_manager is None:
-        ASSV.bgt_manager = BackgroundTaskManager()
+    if BTSV.bgt_manager is None:
+        BTSV.bgt_manager = BackgroundTaskManager()
+
+    check_busy_event_and_add_dynamic_agent_task = (
+        BgtCheckBusyEventAndAddDynamicAgent())
+
+    # TODO : Add user delete checking
+    BTSV.bgt_manager.launch_bg_task(
+        check_busy_event_and_add_dynamic_agent_task,
+        API_SERVER_CHECK_BUSY_EVENT_TIME)

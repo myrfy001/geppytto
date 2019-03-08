@@ -16,7 +16,7 @@ from geppytto.settings import AGENT_NO_ACTIVATE_THRESHOLD
 from . import BaseStorageAccrssor
 
 from .models import CursorClassFactory as CCF
-from .models import UserModel
+from .models import UserModel, BusyEventModel
 
 logger = logging.getLogger()
 
@@ -252,16 +252,50 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
     async def add_user(self, user: UserModel):
         sql = dedent('''\
             insert into user 
-            (name, password, steady_agent_count, dynamic_agent_count, access_token) 
-            values (%s, %s, %s, %s, %s)
+            (name, password, access_token) 
+            values (%s, %s, %s)
             ''')
         ret = await self._execute_fetch_one(
             sql, (user.get('name'),
                   user.get('password'),
-                  user.get('steady_agent_count'),
-                  user.get('dynamic_agent_count'),
                   user.get('access_token')),
             CCF.get(UserModel))
         if ret.error is not None:
             ret.msg = 'add user failed'
+        return ret
+
+    async def add_busy_event(self, busy_event: BusyEventModel):
+        sql = dedent('''\
+            insert into busy_events 
+            (user_id, event_type, last_report_time) values (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE last_report_time=%s
+            ''')
+        ret = await self._execute_fetch_one(
+            sql, (busy_event.get('user_id'),
+                  busy_event.get('event_type'),
+                  busy_event.get('last_report_time'),
+                  busy_event.get('last_report_time')),
+            CCF.get(BusyEventModel))
+        if ret.error is not None:
+            ret.msg = 'add busy_event failed'
+        return ret
+
+    async def add_one_dynamic_agent(self, new_agent_name: str, node_id: int):
+        sql = dedent('''\
+            START TRANSACTION;
+            set @event_id=null, @user_id=null;
+            SELECT event_id, user_id into @event_id, @user_id FROM (SELECT busy_events.id as event_id, agent.user_id, count(*) AS running_dynamic_agent FROM agent LEFT JOIN node ON agent.node_id=node.id WHERE agent.user_id IN (SELECT user_id FROM `busy_events` WHERE `last_report_time` > %(last_report_time)s AND event_type=1 order by last_report_time limit 1) AND node.`is_steady`=0 GROUP BY agent.`user_id`) AS t1 LEFT JOIN `user` ON user.id = t1.user_id WHERE user.`dynamic_agent_count` > running_dynamic_agent;
+            delete from busy_events where id=@event_id;
+            if user_id != null then
+                insert into agent (name, user_id, node_id, last_ack_time) values (%(name)s, @user_id, %(node_id)s, 0);
+            end if
+            commit;
+            ''')
+        last_report_time = int((time.time()-10) * 1000)
+        ret = await self._execute_fetch_all(
+            sql, {
+                'last_report_time': last_report_time,
+                'name': new_agent_name,
+                'node_id': node_id
+            })
         return ret

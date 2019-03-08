@@ -1,10 +1,8 @@
 # coding:utf-8
 
 
-class ApiServerSharedVars:
+class BackgroundTaskSharedVars:
     mysql_conn = None
-    user_info_cache_by_access_token = {}
-
     bgt_manager = None
 
     @classmethod

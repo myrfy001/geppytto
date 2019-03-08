@@ -6,36 +6,10 @@ import logging
 
 from geppytto.browser_agent import AgentSharedVars as ASV
 from geppytto.settings import AGENT_ACTIVATE_REPORT_INTERVAL
+from geppytto.utils.background_task_mgr import (
+    BackgroundTaskBase, BackgroundTaskManager)
 
 logger = logging.getLogger()
-
-
-class BackgroundTaskManager:
-
-    def __init__(self, loop=None):
-        self.loop = loop or asyncio.get_event_loop()
-        self.tasks = []
-
-    def launch_bg_task(self, task, interval):
-        t = self.loop.create_task(self._interval_task_wrapper(task, interval))
-        self.tasks.append(t)
-
-    async def _interval_task_wrapper(self, task, interval):
-        while ASV.soft_exit is False:
-            try:
-                await task.run()
-            except Exception:
-                logger.exception('Error while running background task')
-            await asyncio.sleep(interval)
-        for task in self.tasks:
-            task.cancle()
-        self.tasks.clear()
-
-
-class BackgroundTaskBase:
-
-    async def run(self):
-        raise NotImplementedError()
 
 
 class BgtCheckAndUpdateLastTime(BackgroundTaskBase):
@@ -52,7 +26,7 @@ class BgtCheckAndUpdateLastTime(BackgroundTaskBase):
                     continue
                 if ASV.last_ack_time != data['last_ack_time']:
                     logger.warning('The Agent slot was taken over by another')
-                    ASV.soft_exit = True
+                    ASV.set_soft_exit()
                     return
 
             except Exception:
