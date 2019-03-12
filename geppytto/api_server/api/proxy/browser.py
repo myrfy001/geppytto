@@ -6,6 +6,8 @@ import urllib
 import time
 import websockets
 
+from ttlru import TTLRU
+
 from geppytto.api_server import ApiServerSharedVars as ASSV
 from geppytto.websocket_proxy import WebsocketProxyWorker
 from geppytto.utils import parse_bool
@@ -13,6 +15,9 @@ from geppytto.settings import BROWSER_PER_AGENT
 from geppytto.storage.models import BusyEventModel, BusyEventsTypeEnum
 
 logger = logging.getLogger()
+
+
+busy_event_rate_limiter = TTLRU(1024, ttl=10**10)
 
 
 def get_access_token_from_req(req):
@@ -57,15 +62,17 @@ async def _browser_websocket_connection_handler(
         await client_ws.send('Access Token Invalid')
         return
 
+    user_id = user_info['id']
+
     browser_name = request.raw_args.get('browser_name', None)
 
     for retry in range(BROWSER_PER_AGENT):
 
         if browser_name is None:
-            browser = await pop_free_browser(user_id=user_info['id'])
+            browser = await pop_free_browser(user_id=user_id)
         else:
             named_browser_info = await get_agent_id_for_named_browser(
-                user_info['id'], browser_name)
+                user_id, browser_name)
             if named_browser_info is None:
                 await client_ws.send('No Named Browser')
                 logger.info(
@@ -77,12 +84,18 @@ async def _browser_websocket_connection_handler(
 
         if browser is None:
             if browser_name is None:
-                busy_event = BusyEventModel(
-                    user_id=user_info['id'],
-                    event_type=BusyEventsTypeEnum.ALL_BROWSER_BUSY,
-                    last_report_time=int(time.time()*1000)
-                )
-                await ASSV.mysql_conn.add_busy_event(busy_event)
+
+                if user_id not in busy_event_rate_limiter:
+
+                    busy_event_rate_limiter[user_id] = 1
+
+                    busy_event = BusyEventModel(
+                        user_id=user_id,
+                        event_type=BusyEventsTypeEnum.ALL_BROWSER_BUSY,
+                        last_report_time=int(time.time()*1000)
+                    )
+                    await ASSV.mysql_conn.add_busy_event(busy_event)
+
             await client_ws.send('No Free Browser')
             logger.info(f'No Free Browser user:{user_info["id"]}')
             return

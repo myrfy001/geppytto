@@ -16,16 +16,19 @@ from geppytto.settings import AGENT_NO_ACTIVATE_THRESHOLD
 from . import BaseStorageAccrssor
 
 from .models import CursorClassFactory as CCF
-from .models import UserModel, BusyEventModel
+from .models import (
+    UserModel, BusyEventModel, LimitRulesModel, LimitRulesTypeEnum, NodeModel,
+    BusyEventsTypeEnum)
 
 logger = logging.getLogger()
 
 
 class MySQLQueryResult:
-    __slots__ = ('value', 'error', 'msg')
+    __slots__ = ('value', 'lastrowid', 'error', 'msg')
 
-    def __init__(self, value=None, error=None, msg=None):
+    def __init__(self, value=None, lastrowid=None, error=None, msg=None):
         self.value = value
+        self.lastrowid = lastrowid
         self.error = error
         self.msg = msg
 
@@ -52,8 +55,8 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
                 await cursor.execute(sql, args)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, e)
-        return MySQLQueryResult()
+            return MySQLQueryResult(None, error=e)
+        return MySQLQueryResult(lastrowid=cursor.lastrowid)
 
     async def _execute_fetch_one(
             self, sql, args, cursor_class=aiomysql.DictCursor):
@@ -61,10 +64,11 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             with await self.pool as conn:
                 cursor = await conn.cursor(cursor_class)
                 await cursor.execute(sql, args)
-                return MySQLQueryResult(await cursor.fetchone())
+                return MySQLQueryResult(
+                    await cursor.fetchone(), lastrowid=cursor.lastrowid)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, e)
+            return MySQLQueryResult(None, error=e)
 
     async def _execute_fetch_all(
             self, sql, args, cursor_class=aiomysql.DictCursor):
@@ -72,10 +76,11 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             with await self.pool as conn:
                 cursor = await conn.cursor(cursor_class)
                 await cursor.execute(sql, args)
-                return MySQLQueryResult(await cursor.fetchall())
+                return MySQLQueryResult(
+                    await cursor.fetchall(), lastrowid=cursor.lastrowid)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, e)
+            return MySQLQueryResult(None, error=e)
 
     async def _execute_last_recordset_fetchone(self, sql, args):
         try:
@@ -84,10 +89,11 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
                 await cursor.execute(sql, args)
                 while await cursor.nextset():
                     pass
-                return MySQLQueryResult(await cursor.fetchone())
+                return MySQLQueryResult(
+                    await cursor.fetchone(), lastrowid=cursor.lastrowid)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, e)
+            return MySQLQueryResult(None, error=e)
 
     async def get_node_info(self, id_=None, name=None):
         if id_ is not None:
@@ -99,6 +105,37 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
         ret = await self._execute_fetch_one(sql, (val,))
         return ret
 
+    async def register_node(self, node: NodeModel):
+        sql = 'insert into node (name, is_steady, last_seen_time) values (%(name)s, 0, 0) ON DUPLICATE KEY UPDATE last_seen_time=%(last_seen_time)s'
+
+        ret = await self._execute(sql, {
+            'name': node['name'],
+            'last_seen_time': int(time.time()*1000)
+        })
+        return ret
+
+    async def modify_node(self, node: NodeModel):
+        set_clause_parts = []
+        if node.get('is_steady') is not None:
+            set_clause_parts.append('is_steady=%{is_steady}s')
+
+        set_clause = ','.join(set_clause_parts)
+
+        sql = f'update node set {set_clause} where id=%(id)s'
+
+        ret = await self._execute(sql, {
+            'id': node['id'],
+            'is_steady': node['is_steady'],
+        })
+        return ret
+
+    async def update_node_last_seen_time(self, node_id: str):
+        sql = ('update node set last_seen_time = %(ti)s where id = %(id)s')
+        ti = int(time.time()*1000)
+        ret = await self._execute(sql, {'ti': ti, 'id': node_id})
+        ret.value = ti
+        return ret
+
     async def get_free_agent_slot(self, node_id: str):
         sql = dedent('''\
             START TRANSACTION;
@@ -106,10 +143,10 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
 
             select id, name, advertise_address, user_id, node_id into
                 @id, @name, @advertise_address, @user_id, @node_id
-            from agent where node_id = %s and last_ack_time < %s
+            from agent where node_id = %(node_id)s and last_ack_time < %(threshold)s
                order by last_ack_time limit 1 for update;
 
-            set @last_ack_time=%s;
+            set @last_ack_time=%(new_ack_time)s;
             update agent set last_ack_time=@last_ack_time where id = @id;
             commit;
             select @id as id, @name as name, @advertise_address as advertise_address, @user_id as user_id, @node_id as node_id, @last_ack_time as last_ack_time;
@@ -118,20 +155,22 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
         new_ack_time = int(time.time() * 1000)
         threshold = int(time.time() - AGENT_NO_ACTIVATE_THRESHOLD) * 1000
         ret = await self._execute_last_recordset_fetchone(
-            sql, (node_id, threshold, new_ack_time))
+            sql, {'node_id': node_id, 'threshold': threshold,
+                  'new_ack_time': new_ack_time})
         return ret
 
     async def update_agent_last_ack_time(self, agent_id: str):
         sql = ('update agent set last_ack_time = %s where id = %s')
         ti = int(time.time()*1000)
-        await self._execute(sql, (ti, agent_id))
-        return ti
+        ret = await self._execute(sql, (ti, agent_id))
+        ret.value = ti
+        return ret
 
     async def update_agent_advertise_address(
             self, agent_id: str, advertise_address: str):
         sql = ('update agent set advertise_address = %s where id = %s')
-        await self._execute(sql, (advertise_address, agent_id))
-        return True
+        ret = await self._execute(sql, (advertise_address, agent_id))
+        return ret
 
     async def get_agent_info(self, id_=None, name=None):
         if id_ is not None:
@@ -148,9 +187,9 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
         sql = ('insert into free_browser '
                '(advertise_address, user_id, agent_id, is_steady) '
                'values (%s, %s, %s, %s)')
-        await self._execute(sql, (advertise_address, user_id,
-                                  agent_id, is_steady))
-        return True
+        ret = await self._execute(sql, (advertise_address, user_id,
+                                        agent_id, is_steady))
+        return ret
 
     async def pop_free_browser(
             self, agent_id: str = None, user_id: str = None):
@@ -193,9 +232,18 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             sql = '''select * from free_browser where user_id = %s'''
             return await self._execute_fetch_all(sql, (user_id,))
 
-    async def delete_free_browser(self, id_: int):
-        sql = '''delete from free_browser where id = %s'''
-        return await self._execute_fetch_all(sql, (id_,))
+    async def delete_free_browser(
+            self, id_: int = None, user_id: int = None, agent_id: int = None):
+        if id_ is not None:
+            sql = '''delete from free_browser where id = %(id)s'''
+            id_to_delete = id_
+        elif user_id is not None:
+            sql = '''delete from free_browser where user_id = %(id)s'''
+            id_to_delete = user_id
+        elif agent_id is not None:
+            sql = '''delete from free_browser where agent_id = %(id)s'''
+            id_to_delete = agent_id
+        return await self._execute_fetch_all(sql, {'id': id_to_delete})
 
     async def get_user_info(self, id_=None, name=None, access_token=None):
         if access_token is not None:
@@ -226,29 +274,6 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             ret.msg = 'Duplicate browser_name'
         return ret
 
-    async def get_most_free_agent_for_named_browser(self, user_id: str):
-        sql = dedent('''\
-        SELECT t3.id, count(t3.agent_id) AS count FROM (
-            SELECT t1.id, t2.agent_id FROM agent AS t1 LEFT JOIN named_browser AS t2 ON t1.id = t2.agent_id 
-            WHERE t1.user_id=%s
-        ) AS t3 GROUP BY t3.id ORDER BY count LIMIT 1;
-        ''')
-        ret = await self._execute_fetch_one(sql, (user_id,))
-        return ret
-
-    async def get_most_free_node_for_agent(self):
-        sql = dedent('''\
-        SELECT `id`, (used_count/max_agent) AS `usage` FROM
-        node LEFT JOIN (SELECT node_id, count(node_id) AS used_count FROM agent GROUP BY node_id) AS t1 
-        ON t1.`node_id`=node.id 
-        WHERE node.`is_steady`=TRUE ORDER BY `USAGE` LIMIT 1;
-        ''')
-
-        ret = await self._execute_fetch_one(sql, ())
-        if ret.value['usage'] is None:
-            ret.value['usage'] = 0
-        return ret
-
     async def add_user(self, user: UserModel):
         sql = dedent('''\
             insert into user 
@@ -266,7 +291,7 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
 
     async def add_busy_event(self, busy_event: BusyEventModel):
         sql = dedent('''\
-            insert into busy_events 
+            insert into busy_event 
             (user_id, event_type, last_report_time) values (%s, %s, %s)
             ON DUPLICATE KEY UPDATE last_report_time=%s
             ''')
@@ -280,22 +305,103 @@ class MysqlStorageAccessor(BaseStorageAccrssor):
             ret.msg = 'add busy_event failed'
         return ret
 
-    async def add_one_dynamic_agent(self, new_agent_name: str, node_id: int):
+    async def add_rule(self, rule: LimitRulesModel):
         sql = dedent('''\
-            START TRANSACTION;
-            set @event_id=null, @user_id=null;
-            SELECT event_id, user_id into @event_id, @user_id FROM (SELECT busy_events.id as event_id, agent.user_id, count(*) AS running_dynamic_agent FROM agent LEFT JOIN node ON agent.node_id=node.id WHERE agent.user_id IN (SELECT user_id FROM `busy_events` WHERE `last_report_time` > %(last_report_time)s AND event_type=1 order by last_report_time limit 1) AND node.`is_steady`=0 GROUP BY agent.`user_id`) AS t1 LEFT JOIN `user` ON user.id = t1.user_id WHERE user.`dynamic_agent_count` > running_dynamic_agent;
-            delete from busy_events where id=@event_id;
-            if user_id != null then
-                insert into agent (name, user_id, node_id, last_ack_time) values (%(name)s, @user_id, %(node_id)s, 0);
-            end if
-            commit;
+            insert into limit_rule (`owner_id`, `type`, `limit`, `current`) values( %(owner_id)s, %(type)s, %(limit)s, %(current)s)
             ''')
-        last_report_time = int((time.time()-10) * 1000)
+        ret = await self._execute_fetch_all(
+            sql, {
+                'owner_id': rule['owner_id'],
+                'type': rule['type'],
+                'limit': rule['limit'],
+                'current': rule['current'],
+            })
+        return ret
+
+    async def get_recent_browser_busy_events(self):
+
+        last_report_time = int(time.time()-5) * 1000
+        sql = dedent('''\
+            select * from busy_event where last_report_time>%(last_report_time)s and event_type=%(event_type)s order by last_report_time DESC limit 100
+            ''')
         ret = await self._execute_fetch_all(
             sql, {
                 'last_report_time': last_report_time,
-                'name': new_agent_name,
-                'node_id': node_id
+                'event_type': BusyEventsTypeEnum.ALL_BROWSER_BUSY
             })
+        return ret
+
+    async def get_free_limit_rules_by_owner_ids(
+            self, rule_type: int, owner_ids: List):
+        sql = dedent('''\
+            select * from limit_rule where `type`=%(type)s and owner_id in %(user_ids)s and ratio < 0.99999
+            ''')
+
+        ret = await self._execute_fetch_all(
+            sql, {
+                'user_ids': owner_ids,
+                'type': rule_type
+            })
+        return ret
+
+    async def get_agent_info
+
+    async def get_alive_node(self, last_seen_time: int, is_steady: int):
+        sql = dedent('''\
+            select * from node where last_seen_time>%(last_seen_time)s and is_steady=%(is_steady)s
+            ''')
+        ret = await self._execute_fetch_all(
+            sql, {
+                'is_steady': is_steady,
+                'last_seen_time': last_seen_time
+            })
+        return ret
+
+    async def add_dynamic_agent(self, name: str, user_id: int, node_id: int):
+
+        sql = dedent('''\
+            START TRANSACTION;
+            insert into agent (name, user_id, node_id, last_ack_time) values (%(name)s, %(user_id)s, %(node_id)s, 0);
+            update limit_rule set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s;
+            update limit_rule set current=current+1 where owner_id=%(node_id)s and `type`=%(type_node)s;
+            COMMIT;
+            ''')
+        ret = await self._execute(
+            sql, {'name': name, 'user_id': user_id, 'node_id': node_id,
+                  'type_user': LimitRulesTypeEnum.MAX_DYNAMIC_AGENT_ON_USER,
+                  'type_node': LimitRulesTypeEnum.MAX_AGENT_ON_NODE})
+        return ret
+
+    async def remove_dynamic_agent(
+            self, agent_id: int, user_id: int, node_id: int):
+        sql = dedent('''\
+            START TRANSACTION;
+            delete from agent where id=%(agent_id)s;
+            update limit_rule set current=current-1 where owner_id=%(user_id)s and `type`=%(type_user)s and current>0;
+            update limit_rule set current=current-1 where owner_id=%(node_id)s and `type`=%(type_node)s and current>0;
+            COMMIT;
+            ''')
+        ret = await self._execute(
+            sql, {'agent_id': agent_id, 'user_id': user_id, 'node_id': node_id,
+                  'type_user': LimitRulesTypeEnum.MAX_DYNAMIC_AGENT_ON_USER,
+                  'type_node': LimitRulesTypeEnum.MAX_AGENT_ON_NODE})
+        print(ret.error)
+        return ret
+
+    async def modify_limit(self, limit_model: LimitRulesModel):
+        set_clause_parts = []
+        if limit_model.get('owner_id') is not None:
+            set_clause_parts.append('owner_id=%{owner_id}s')
+        if limit_model.get('type') is not None:
+            set_clause_parts.append('`type`=%{type}s')
+        if limit_model.get('limit') is not None:
+            set_clause_parts.append('`limit`=%{limit}s')
+        if limit_model.get('current') is not None:
+            set_clause_parts.append('`current`=%{current}s')
+
+        set_clause = ','.join(set_clause_parts)
+
+        sql = f'update node set {set_clause} where id=%(id)s'
+
+        ret = await self._execute(sql, limit_model)
         return ret

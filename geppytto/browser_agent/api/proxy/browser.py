@@ -16,6 +16,10 @@ logger = logging.getLogger()
 async def browser_websocket_connection_handler(
         request, client_ws, browser_token):
 
+    if ASV.soft_exit:
+        await client_ws.send('Soft Exiting')
+        return
+
     await asyncio.shield(
         _browser_websocket_connection_handler(
             request, client_ws, browser_token))

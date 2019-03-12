@@ -6,7 +6,7 @@ import logging
 import argparse
 import sys
 from os.path import abspath, dirname
-from os import environ
+from os import environ, fork, waitpid
 
 import asyncio
 
@@ -16,7 +16,8 @@ sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
 from geppytto.utils import get_ip  # noqa
 
-if __name__ == '__main__':
+
+def main():
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     parser = argparse.ArgumentParser(
@@ -56,6 +57,24 @@ if __name__ == '__main__':
         args.user_data_dir = (
             user_data_dir_in_env or '/data/browser_data')
 
-    agent_main = import_module('geppytto.browser_agent.entry').agent_main
+    while 1:
+        pid = fork()
+        if pid != 0:
+            # parent:
+            waitpid(pid, 0)
+            continue
+        else:
+            # child
+            run_main_program_in_forked_child(args)
+            break
+
+
+def run_main_program_in_forked_child(args):
+    agent_main = import_module(
+        'geppytto.browser_agent.entry').agent_main
     loop = asyncio.get_event_loop()
     loop.run_until_complete(agent_main(args))
+
+
+if __name__ == '__main__':
+    main()

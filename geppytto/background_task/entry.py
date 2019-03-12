@@ -37,7 +37,7 @@ async def connect_to_mysql(args):
     BTSV.mysql_conn = mysql
 
 
-async def api_server_main(args):
+async def background_task_main(args):
 
     await connect_to_mysql(args)
 

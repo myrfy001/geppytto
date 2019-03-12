@@ -7,7 +7,17 @@ class BusyEventsTypeEnum:
     ALL_BROWSER_BUSY = 1
 
 
+class LimitRulesTypeEnum:
+    MAX_AGENT_ON_NODE = 1
+    MAX_STEADY_AGENT_ON_USER = 2
+    MAX_DYNAMIC_AGENT_ON_USER = 3
+
+
 class BaseModel(dict):
+    pass
+
+
+class NodeModel(BaseModel):
     pass
 
 
@@ -16,6 +26,10 @@ class UserModel(BaseModel):
 
 
 class BusyEventModel(BaseModel):
+    pass
+
+
+class LimitRulesModel(BaseModel):
     pass
 
 

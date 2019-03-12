@@ -3,15 +3,17 @@
 from sanic.blueprints import Blueprint
 from sanic.exceptions import ServerError
 
-from .node import get_node_info
+from .node import get_node_info, register_node
 from .agent import (
-    get_agent_info, get_free_agent_slot, update_agent_last_ack_time,
-    update_agent_advertise_address)
+    get_agent_info, get_free_agent_slot, agent_health_report,
+    update_agent_advertise_address, remove_agent)
 from .free_browser import (
     pop_free_browser, add_free_browser, get_free_browser,
     delete_free_browser)
 from .named_browser import (add_named_browser)
 from .user import add_user
+from .limit_rule import modify_limit
+
 from ..utils import get_err_response
 
 
@@ -30,13 +32,17 @@ def external_bp_exception_handler(request, exception):
 
 
 internal_bp.add_route(get_node_info, '/node')
+internal_bp.add_route(register_node, '/node/register_node', methods=('POST',))
 
 internal_bp.add_route(get_agent_info, '/agent')
 internal_bp.add_route(get_free_agent_slot, '/agent/get_free_agent_slot')
-internal_bp.add_route(update_agent_last_ack_time,
-                      '/agent/update_agent_last_ack_time')
+internal_bp.add_route(agent_health_report,
+                      '/agent/agent_health_report')
 internal_bp.add_route(update_agent_advertise_address,
                       '/agent/update_agent_advertise_address')
+internal_bp.add_route(remove_agent,
+                      '/agent/remove_agent',
+                      methods=('DELETE',))
 
 
 internal_bp.add_route(get_free_browser, '/free_browser/get_free_browser')
@@ -53,3 +59,6 @@ external_bp.add_route(add_named_browser, '/named_browser/add_named_browser',
 
 external_bp.add_route(add_user, '/user/add_user',
                       methods=('POST',))
+
+
+external_bp.add_route(modify_limit, 'limit_rule')

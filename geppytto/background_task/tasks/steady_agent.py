@@ -8,7 +8,7 @@ from geppytto.utils.background_task_mgr import (
 from geppytto.storage.models import LimitRulesTypeEnum
 
 
-class BgtCheckBusyEventAndAddDynamicAgent(BackgroundTaskBase):
+class BgtCheckRulesAndAddSteadyAgent(BackgroundTaskBase):
 
     async def run(self):
         print('----------------')

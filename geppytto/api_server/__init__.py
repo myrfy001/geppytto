@@ -10,4 +10,4 @@ class ApiServerSharedVars:
     @classmethod
     def set_soft_exit(cls):
         cls.soft_exit = True
-        cls.bgt_manager.soft_stop()
+        cls.bgt_manager.soft_exit()

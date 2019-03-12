@@ -3,8 +3,10 @@ import os
 import uuid
 import asyncio
 from typing import Dict, Any
+import time
 import logging
 import psutil
+
 
 from pyppeteer.launcher import Launcher
 
@@ -23,6 +25,8 @@ class BrowserPool:
 
         self.maybe_zombie_free_browsers = []
         self.maybe_out_of_control_pids = []
+
+        self.last_idle_time = time.time()
 
     async def _close_process(self, proc: psutil.Process):
         try:
@@ -84,14 +88,19 @@ class BrowserPool:
                 continue
 
         et = time.time() - st
-        print(f'out of control took {et}')
+        logger.info(f'out of control took {et}')
 
     def is_full(self):
         return (len(self.free_browsers) + len(self.busy_browsers)
                 >= BROWSER_PER_AGENT)
 
+    def is_idle(self):
+        return not bool(self.busy_browsers)
+
     async def put_browser_to_pool(self):
         if self.is_full():
+            return False
+        if ASV.soft_exit:
             return False
         new_token = str(uuid.uuid4())
         host_port = ASV.advertise_address[7:]
@@ -149,6 +158,8 @@ class BrowserPool:
 
     def release_browser(self, token: str):
         self.busy_browsers.pop(token, None)
+        if not self.busy_browsers:
+            self.last_idle_time = time.time()
 
 
 class Browser:
