@@ -57,12 +57,8 @@ async def remove_agent(req):
             is_steady is None)):
         return get_err_response(None, msg='missing param')
 
-    print('is_steady', is_steady)
-    if is_steady is False:
-        ret = await ASSV.mysql_conn.remove_dynamic_agent(
-            agent_id, user_id, node_id)
-    else:
-        pass
+    ret = await ASSV.mysql_conn.remove_agent(
+        agent_id, user_id, node_id, is_steady=is_steady)
 
     if ret.error is None:
         return get_ok_response(True)

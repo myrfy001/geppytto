@@ -12,7 +12,7 @@ from .free_browser import (
     delete_free_browser)
 from .named_browser import (add_named_browser)
 from .user import add_user
-from .limit_rule import modify_limit
+from .limit_rule import upsert_limit
 
 from ..utils import get_err_response
 
@@ -61,4 +61,5 @@ external_bp.add_route(add_user, '/user/add_user',
                       methods=('POST',))
 
 
-external_bp.add_route(modify_limit, 'limit_rule')
+external_bp.add_route(upsert_limit, '/limit_rule/upsert_limit',
+                      methods=('POST',))

@@ -15,6 +15,8 @@ from geppytto.utils.background_task_mgr import (
 from geppytto.background_task.tasks.dynamic_agent import (
     BgtCheckBusyEventAndAddDynamicAgent)
 
+from geppytto.background_task.tasks.steady_agent import (
+    BgtCheckRulesAndAddSteadyAgent)
 
 from ttlru import TTLRU
 
@@ -54,7 +56,13 @@ def start_background_task():
     check_busy_event_and_add_dynamic_agent_task = (
         BgtCheckBusyEventAndAddDynamicAgent())
 
-    # TODO : Add user delete checking
+    check_rules_and_add_steady_agent_task = (
+        BgtCheckRulesAndAddSteadyAgent())
+
     BTSV.bgt_manager.launch_bg_task(
         check_busy_event_and_add_dynamic_agent_task,
+        API_SERVER_CHECK_BUSY_EVENT_TIME)
+
+    BTSV.bgt_manager.launch_bg_task(
+        check_rules_and_add_steady_agent_task,
         API_SERVER_CHECK_BUSY_EVENT_TIME)

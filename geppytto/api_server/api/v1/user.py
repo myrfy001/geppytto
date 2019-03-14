@@ -34,9 +34,10 @@ async def add_user(req):
 
     if not ret.lastrowid:
         return get_err_response(None, msg='add user failed')
+    new_user_id = ret.lastrowid
 
     limit_rule = LimitRulesModel(
-        owner_id=ret.lastrowid,
+        owner_id=new_user_id,
         type=LimitRulesTypeEnum.MAX_STEADY_AGENT_ON_USER,
         limit=steady_agent_count,
         current=0
@@ -46,7 +47,7 @@ async def add_user(req):
         return get_err_response(None, msg='add user failed')
 
     limit_rule = LimitRulesModel(
-        owner_id=ret.lastrowid,
+        owner_id=new_user_id,
         type=LimitRulesTypeEnum.MAX_DYNAMIC_AGENT_ON_USER,
         limit=dynamic_agent_count,
         current=0
