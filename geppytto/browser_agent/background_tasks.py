@@ -38,10 +38,10 @@ class BgtCheckAndUpdateLastTime(BackgroundTaskBase):
                 ret = await ASV.api_client.agent_health_report(
                     ASV.agent_id, ASV.node_id)
                 data = ret['data']
-                if data is None:
+                if data['agent_update'] != 1:
                     await asyncio.sleep(1)
                     continue
-                ASV.last_ack_time = data['new_time']
+                ASV.last_ack_time = data['new_agent_time']
                 logger.debug('agent updated last_ack_time')
                 break
 
@@ -52,7 +52,7 @@ class BgtCheckAndUpdateLastTime(BackgroundTaskBase):
 class BgtAddMissingFreeBrowsers(BackgroundTaskBase):
     '''
     1. When the agent starts, this will help add initial free browsers
-    2. when a client dissconnect, put free browser back to pool may fail, this 
+    2. when a client dissconnect, put free browser back to pool may fail, this
        task will add the missed items.
     '''
     async def run(self):
@@ -82,10 +82,8 @@ class BgtCheckFreeBrowserMisMatch(BackgroundTaskBase):
 class BgtCheckAgentIdelOrRemove(BackgroundTaskBase):
     async def run(self):
 
-        print('-=-=-=-=-=-=-=-=+++++++')
         ret = await ASV.api_client.get_agent_info(
             id_=ASV.agent_id)
-        print('ret', ret)
         if ret['code'] == 200 and ret['data'] is None:
             # No record for this agent, the agent has been removed
             ASV.set_soft_exit()
@@ -95,7 +93,7 @@ class BgtCheckAgentIdelOrRemove(BackgroundTaskBase):
         if ASV.is_node_steady:
             return
 
-        if not ASV.browser_pool.is_idle:
+        if not ASV.browser_pool.is_idle():
             return
 
         if (time.time() - ASV.browser_pool.last_idle_time <

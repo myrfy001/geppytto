@@ -26,13 +26,23 @@ async def get_free_agent_slot(req):
 async def agent_health_report(req):
     agent_id = req.raw_args.get('agent_id')
     node_id = req.raw_args.get('node_id')
-    await ASSV.mysql_conn.update_node_last_seen_time(node_id)
-    ret = await ASSV.mysql_conn.update_agent_last_ack_time(
-        agent_id)
-    if ret.value is not None:
-        return get_ok_response({'new_time': ret.value})
-    else:
-        return get_err_response(ret.value, msg='not found')
+    ret_data = {
+        'node_update': 0,
+        'agent_update': 0,
+    }
+    if node_id is not None:
+        ret = await ASSV.mysql_conn.update_node_last_seen_time(node_id)
+        if ret.error is None:
+            ret_data['node_update'] = 1
+
+    if agent_id is not None:
+        ret = await ASSV.mysql_conn.update_agent_last_ack_time(
+            agent_id)
+        if ret.error is None:
+            ret_data['agent_update'] = 1
+            ret_data['new_agent_time'] = ret.value
+
+    return get_ok_response(ret_data)
 
 
 async def update_agent_advertise_address(req):

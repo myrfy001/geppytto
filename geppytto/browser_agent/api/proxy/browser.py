@@ -39,7 +39,10 @@ async def _browser_websocket_connection_handler(
 
         if browser_name is not None:
             user_data_dir = os.path.join(ASV.user_data_dir, browser_name)
-            await browser.run(user_data_dir, headless)
+        else:
+            user_data_dir = None
+
+        await browser.run(user_data_dir, headless)
 
         browser_ws = await asyncio.wait_for(
             websockets.connect(browser.browser_debug_url), timeout=2)

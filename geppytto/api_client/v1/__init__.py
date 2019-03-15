@@ -66,15 +66,19 @@ class GeppyttoApiClient:
                 self._url_get_free_agent_slot,
                 params={'node_id': node_id}) as resp:
             ret = await resp.json()
-            print('-----------', ret)
             if ret['data']['id'] is None:
                 ret['data'] = None
             return ret
 
     async def agent_health_report(self, agent_id: str, node_id: str):
+        params = {}
+        if agent_id is not None:
+            params['agent_id'] = agent_id
+
+        if node_id is not None:
+            params['node_id'] = node_id
         async with self.session.get(
-                self._url_agent_health_report,
-                params={'agent_id': agent_id, 'node_id': node_id}) as resp:
+                self._url_agent_health_report, params=params) as resp:
             return await resp.json()
 
     async def update_agent_advertise_address(

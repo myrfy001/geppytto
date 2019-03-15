@@ -59,6 +59,8 @@ async def agent_main(args):
 
 async def bind_self_to_agent_slot():
     while ASV.running:
+        # for a new launched node, must update is's last seen time
+        await ASV.api_client.agent_health_report(None, ASV.node_id)
         free_agent_slot = await (
             ASV.api_client.get_free_agent_slot(ASV.node_id))
         agent_info = free_agent_slot['data']

@@ -49,16 +49,3 @@ async def modify_node(req):
         return get_err_response(None, msg='modify node failed')
     else:
         return get_ok_response(True)
-
-    # rule = LimitRulesModel(
-    #     owner_id=ret.lastrowid,
-    #     type=LimitRulesTypeEnum.MAX_AGENT_ON_NODE,
-    #     limit=max_agent_count,
-    #     current=0
-    # )
-    # ret = await ASSV.mysql_conn.add_rule(rule)
-    # print(ret.lastrowid)
-    # if ret.lastrowid is None:
-    #     return get_err_response(None, msg='add node failed')
-    # else:
-    #     return get_ok_response(True)

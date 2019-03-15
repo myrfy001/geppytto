@@ -161,18 +161,7 @@ RUN mkdir -p $application_directory
 WORKDIR $application_directory
 
 
-
-
-# Install app dependencies
-COPY requirements.txt .
-RUN pip install --no-cache -r requirements.txt
-
-
 RUN apt-get update && apt-get install -y gdb
-
-# Bundle app source
-COPY . .
-
 
 
 # Add user
@@ -189,6 +178,15 @@ RUN cd /tmp && \
 # It's a good idea to use dumb-init to help prevent zombie chrome processes.
 ADD https://github.com/Yelp/dumb-init/releases/download/v1.2.0/dumb-init_1.2.0_amd64 /usr/local/bin/dumb-init
 RUN chmod +x /usr/local/bin/dumb-init
+
+
+# Install app dependencies
+COPY requirements.txt .
+RUN pip install --no-cache -r requirements.txt
+
+# Bundle app source
+COPY . .
+
 
 # Run everything after as non-privileged user.
 USER geppytto
