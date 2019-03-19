@@ -15,7 +15,8 @@ from geppytto.browser_agent import AgentSharedVars as ASV
 from geppytto.browser_agent.background_tasks import (
     BackgroundTaskManager, BgtCheckAndUpdateLastTime,
     BgtAddMissingFreeBrowsers, BgtKillOutOfControlBrowsers,
-    BgtCheckFreeBrowserMisMatch, BgtCheckAgentIdelOrRemove)
+    BgtCheckFreeBrowserMisMatch, BgtCheckAgentIdelOrRemove,
+    BgtDeleteCoreDumpFile)
 from geppytto.settings import (
     AGENT_ACTIVATE_REPORT_INTERVAL,
     BROWSER_PER_AGENT,
@@ -94,6 +95,7 @@ def start_background_task():
     kill_out_of_control_browser_task = BgtKillOutOfControlBrowsers()
     check_free_browser_mismatch_task = BgtCheckFreeBrowserMisMatch()
     check_agent_idle_or_remove_task = BgtCheckAgentIdelOrRemove()
+    delete_core_dump_file_task = BgtDeleteCoreDumpFile()
     # TODO : Add user delete checking
     ASV.bgt_manager.launch_bg_task(
         check_update_last_ack_time_task, AGENT_ACTIVATE_REPORT_INTERVAL)
@@ -108,6 +110,10 @@ def start_background_task():
     ASV.bgt_manager.launch_bg_task(
         check_agent_idle_or_remove_task,
         AGENT_ACTIVATE_REPORT_INTERVAL)
+    ASV.bgt_manager.launch_bg_task(
+        delete_core_dump_file_task,
+        AGENT_CHECK_OUT_OF_CONTROL_BROWSER_INTERVAL
+    )
 
 
 async def teardown_process():

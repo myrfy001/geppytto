@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import time
+import os
+import glob
 
 from geppytto.browser_agent import AgentSharedVars as ASV
 from geppytto.settings import (
@@ -102,3 +104,10 @@ class BgtCheckAgentIdelOrRemove(BackgroundTaskBase):
 
         ASV.set_soft_exit()
         logger.info(f'Exit because agent idle, agent:{ASV.agent_id}')
+
+
+class BgtDeleteCoreDumpFile(BackgroundTaskBase):
+    async def run(self):
+        for fn in glob.glob('./core.*'):
+            logger.info(f'Remove core dump file:{fn}')
+            os.remove(fn)
