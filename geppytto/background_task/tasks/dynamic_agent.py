@@ -17,7 +17,7 @@ class BgtCheckBusyEventAndAddDynamicAgent(BackgroundTaskBase):
             return
 
         users_need_to_scale_ids = [x['user_id'] for x in ret.value]
-        print('users_need_to_scale_ids', users_need_to_scale_ids)
+        print('dynamic_agent:users_need_to_scale_ids', users_need_to_scale_ids)
 
         ret = await BTSV.mysql_conn.get_free_limit_rules(
             rule_type=LimitRulesTypeEnum.MAX_DYNAMIC_AGENT_ON_USER,

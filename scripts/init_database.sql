@@ -10,7 +10,7 @@ CREATE TABLE `agent` (
   KEY `user_id` (`user_id`),
   KEY `node_id` (`node_id`),
   KEY `last_ack_time` (`last_ack_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=5761 DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Create syntax for TABLE 'busy_event'
 CREATE TABLE `busy_event` (
@@ -21,19 +21,18 @@ CREATE TABLE `busy_event` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_event_type_user_id` (`event_type`,`user_id`),
   KEY `idx_last_report_time` (`last_report_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=12905 DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Create syntax for TABLE 'free_browser'
-CREATE TABLE `free_browser` (
+CREATE TABLE `browser_agent_map` (
   `id` bigint(15) unsigned NOT NULL AUTO_INCREMENT,
-  `advertise_address` char(255) NOT NULL DEFAULT '',
   `user_id` bigint(11) NOT NULL,
+  `bid` char(255) NOT NULL DEFAULT '',
   `agent_id` bigint(11) NOT NULL,
-  `is_steady` tinyint(1) NOT NULL,
+  `create_time` bigint(20) NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `user_id` (`user_id`),
-  KEY `agent_id` (`agent_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1055071 DEFAULT CHARSET=utf8mb4;
+  UNIQUE KEY `idx_uid_bid` (`user_id`,`bid`),
+  KEY `idx_agent_id` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Create syntax for TABLE 'limit_rule'
 CREATE TABLE `limit_rule` (
@@ -46,7 +45,7 @@ CREATE TABLE `limit_rule` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_owner_id_type` (`owner_id`,`type`),
   KEY `idx_type_ratio` (`type`,`ratio`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Create syntax for TABLE 'named_browser'
 CREATE TABLE `named_browser` (
@@ -56,7 +55,7 @@ CREATE TABLE `named_browser` (
   `agent_id` bigint(11) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name_user_id_unique` (`name`,`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Create syntax for TABLE 'node'
 CREATE TABLE `node` (
@@ -67,15 +66,15 @@ CREATE TABLE `node` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_name` (`name`),
   KEY `idx_last_seen_time` (`last_seen_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Create syntax for TABLE 'user'
 CREATE TABLE `user` (
   `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
   `name` char(63) NOT NULL DEFAULT '',
   `password` char(63) DEFAULT NULL,
-  `access_token` varchar(256) NOT NULL DEFAULT '',
+  `access_token` varchar(128) NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`),
   UNIQUE KEY `access_token` (`access_token`)
-) ENGINE=InnoDB AUTO_INCREMENT=2043 DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

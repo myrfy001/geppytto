@@ -51,34 +51,10 @@ class BgtCheckAndUpdateLastTime(BackgroundTaskBase):
                 await asyncio.sleep(1)
 
 
-class BgtAddMissingFreeBrowsers(BackgroundTaskBase):
-    '''
-    1. When the agent starts, this will help add initial free browsers
-    2. when a client dissconnect, put free browser back to pool may fail, this
-       task will add the missed items.
-    '''
-    async def run(self):
-        # Put free browsers to pool
-        print('browser_pool===============')
-        print('free', ASV.browser_pool.free_browsers)
-        print('busy', ASV.browser_pool.busy_browsers)
-        for x in range(3):
-            if ASV.browser_pool.is_full():
-                break
-            print('Adding missing new browser to pool')
-            await ASV.browser_pool.put_browser_to_pool()
-
-
 class BgtKillOutOfControlBrowsers(BackgroundTaskBase):
     async def run(self):
         await ASV.browser_pool.close_out_of_control_browser()
         logger.info('kill out of control browser task finished')
-
-
-class BgtCheckFreeBrowserMisMatch(BackgroundTaskBase):
-    async def run(self):
-        await ASV.browser_pool.check_free_browser_db_mis_match()
-        logger.info('check free browser db mismatch task finished')
 
 
 class BgtCheckAgentIdelOrRemove(BackgroundTaskBase):

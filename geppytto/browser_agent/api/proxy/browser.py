@@ -8,29 +8,63 @@ import websockets
 from geppytto.browser_agent import AgentSharedVars as ASV
 from geppytto.websocket_proxy import WebsocketProxyWorker
 from geppytto.utils import parse_bool
-
+from geppytto.settings import AGENT_REQUEST_QUEUE_LENGTH
 
 logger = logging.getLogger()
 
+request_queue = asyncio.Queue(maxsize=AGENT_REQUEST_QUEUE_LENGTH)
+
 
 async def browser_websocket_connection_handler(
-        request, client_ws, browser_token):
+        request, client_ws, bid):
 
     if ASV.soft_exit:
         await client_ws.send('Soft Exiting')
         return
+    browser = await ASV.browser_pool.get_browser(bid, no_wait=True)
+    if browser is None:
+        if request_queue.full():
+            await client_ws.send('Busy')
+            return
 
-    await asyncio.shield(
-        _browser_websocket_connection_handler(
-            request, client_ws, browser_token))
+    loop = asyncio.get_event_loop()
+    request_finish_fut = loop.create_future()
+    if browser is None:
+        logger.info('put conn to queue')
+        request_queue.put_nowait((request, client_ws, bid, request_finish_fut))
+    else:
+        logger.info('handle conn immediately')
+        asyncio.ensure_future(_browser_websocket_connection_handler(
+            request, client_ws, bid, browser, request_finish_fut
+        ))
+
+    await asyncio.shield(request_finish_fut)
+
+
+async def request_queue_dispatcher():
+    loop = asyncio.get_event_loop()
+    while ASV.running:
+        try:
+            request, client_ws, bid, request_finish_fut = await (
+                request_queue.get())
+            browser = await ASV.browser_pool.get_browser(bid)
+            if browser is None:
+                await client_ws.send('Busy')
+                continue
+
+            asyncio.ensure_future(_browser_websocket_connection_handler(
+                request, client_ws, bid, browser, request_finish_fut
+            ))
+
+        except Exception:
+            pass
 
 
 async def _browser_websocket_connection_handler(
-        request, client_ws, browser_token):
-    browser = ASV.browser_pool.get_browser(browser_token)
-    logger.info('get token' + browser_token)
-    if browser is None:
-        await client_ws.send('Unknown Token')
+        request, client_ws, bid, browser, request_finish_fut):
+
+    if not browser.add_client():
+        await client_ws.send('Busy')
         return
 
     try:
@@ -42,6 +76,7 @@ async def _browser_websocket_connection_handler(
         else:
             user_data_dir = None
 
+        # if the browser is already running, this call has no effect
         await browser.run(user_data_dir, headless)
 
         browser_ws = await asyncio.wait_for(
@@ -59,12 +94,4 @@ async def _browser_websocket_connection_handler(
         logger.exception('browser_websocket_connection_handler')
 
     finally:
-
-        try:
-            await browser.close(browser_token)
-        except Exception:
-            logger.exception(
-                'browser_websocket_connection_handler close browser failed')
-        ASV.browser_pool.release_browser(browser_token)
-        logger.info('release token' + browser_token)
-        await ASV.browser_pool.put_browser_to_pool()
+        await browser.remove_client()

@@ -18,7 +18,7 @@ from . import BaseStorageAccrssor
 from .models import CursorClassFactory as CCF
 from .models import (
     UserModel, BusyEventModel, LimitRulesModel, LimitRulesTypeEnum, NodeModel,
-    BusyEventsTypeEnum)
+    BrowserAgentMapModel, BusyEventsTypeEnum)
 
 logger = logging.getLogger()
 
@@ -136,71 +136,44 @@ class AgentMixIn:
         ret = await self._execute_fetch_one(sql, (val,))
         return ret
 
-
-class FreeBrowserMixIn:
-
-    async def add_free_browser(self, advertise_address: str, user_id: str,
-                               agent_id: str, is_steady: bool):
-        sql = ('insert into free_browser '
-               '(advertise_address, user_id, agent_id, is_steady) '
-               'values (%s, %s, %s, %s)')
-        ret = await self._execute(sql, (advertise_address, user_id,
-                                        agent_id, is_steady))
+    async def get_alive_agent_for_user(self, user_id: int):
+        sql = 'select * from agent where user_id = %(user_id)s and last_ack_time > %(last_ack_time)s'
+        threshold = int(time.time() - AGENT_NO_ACTIVATE_THRESHOLD/2) * 1000
+        ret = await self._execute_fetch_all(
+            sql, {'user_id': user_id, 'last_ack_time': threshold})
         return ret
 
-    async def pop_free_browser(
-            self, agent_id: str = None, user_id: str = None):
-        if agent_id is not None:
-            sql = dedent('''\
-            START TRANSACTION;
-            set @id=null,@adv_addr=null,@user_id=null,@agent_id=null,@is_steady=null;
-            select id, advertise_address, user_id, agent_id, is_steady
-                into
-                @id, @adv_addr, @user_id, @agent_id, @is_steady
-                from free_browser where agent_id = %s limit 1;
-            delete from free_browser where id = @id;
-            COMMIT;
-            select @id as id, @adv_addr as advertise_address, @user_id as user_id, @agent_id as agent_id, @is_steady as is_steady;
+
+class BrowserAgentMapMixIn:
+
+    async def add_browser_agent_map(self, bam: BrowserAgentMapModel):
+        sql = ('insert into browser_agent_map '
+               '(user_id, bid, agent_id, create_time) '
+               'values (%(user_id)s, %(bid)s, %(agent_id)s, '
+               '%(create_time)s)')
+
+        ret = await self._execute(sql, bam)
+        return ret
+
+    async def get_agent_id_by_browser_id(self, user_id: int, bid: str):
+
+        sql = dedent('''\
+            select agent_id from browser_agent_map 
+            where user_id=%(user_id)s and bid = %(bid)s;
             ''')
+        return await self._execute_fetch_one(
+            sql, {'user_id': user_id, 'bid': bid})
 
-            return await self._execute_last_recordset_fetchone(sql, (agent_id,))
-
+    async def delete_browser_agent_map(
+            self, user_id: int, bid: str, agent_id: int = None):
+        if agent_id is None:
+            sql = ('delete from browser_agent_map where user_id=%(user_id)s '
+                   'and bid = %(bid)s')
         else:
-            sql = dedent('''\
-            START TRANSACTION;
-            set @id=null,@adv_addr=null,@user_id=null,@agent_id=null,@is_steady=null;
-            select id, advertise_address, user_id, agent_id, is_steady
-                into
-                @id, @adv_addr, @user_id, @agent_id, @is_steady
-                from free_browser  where user_id = %s order by is_steady DESC limit 1;
-            delete from free_browser where id = @id;
-            COMMIT;
-            select @id as id, @adv_addr as advertise_address, @user_id as user_id, @agent_id as agent_id, @is_steady as is_steady;
-            ''')
-            return await self._execute_last_recordset_fetchone(sql, (user_id,))
+            sql = 'delete from browser_agent_map where agent_id=%(agent_id)s'
 
-    async def get_free_browser(
-            self, agent_id: str = None, user_id: str = None):
-        if agent_id is not None:
-            sql = '''select * from free_browser where agent_id = %s'''
-            return await self._execute_fetch_all(sql, (agent_id,))
-
-        else:
-            sql = '''select * from free_browser where user_id = %s'''
-            return await self._execute_fetch_all(sql, (user_id,))
-
-    async def delete_free_browser(
-            self, id_: int = None, user_id: int = None, agent_id: int = None):
-        if id_ is not None:
-            sql = '''delete from free_browser where id = %(id)s'''
-            id_to_delete = id_
-        elif user_id is not None:
-            sql = '''delete from free_browser where user_id = %(id)s'''
-            id_to_delete = user_id
-        elif agent_id is not None:
-            sql = '''delete from free_browser where agent_id = %(id)s'''
-            id_to_delete = agent_id
-        return await self._execute_fetch_all(sql, {'id': id_to_delete})
+        return await self._execute_fetch_all(
+            sql, {'user_id': user_id, 'bid': bid, 'agent_id': agent_id})
 
 
 class UserMixIn:
@@ -385,7 +358,7 @@ class MultiTableOperationMixIn:
 
 
 class MysqlStorageAccessor(
-        BaseStorageAccrssor, NodeMixIn, AgentMixIn, FreeBrowserMixIn,
+        BaseStorageAccrssor, NodeMixIn, AgentMixIn, BrowserAgentMapMixIn,
         UserMixIn, NamedBrowserMixIn, BusyEventMixIn, LimitRuleMixIn,
         MultiTableOperationMixIn):
     def __init__(self, host: str, port: int, user: str, pw: str, db: str,

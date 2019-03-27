@@ -18,7 +18,7 @@ class BgtCheckRulesAndAddSteadyAgent(BackgroundTaskBase):
             return
 
         users_need_to_scale_ids = [x['owner_id'] for x in ret.value]
-        print('users_need_to_scale_ids', users_need_to_scale_ids)
+        print('steady_node:users_need_to_scale_ids', users_need_to_scale_ids)
 
         ret = await BTSV.mysql_conn.get_alive_node(
             last_seen_time=int(time.time()-20)*1000,

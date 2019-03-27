@@ -20,14 +20,10 @@ class GeppyttoApiClient:
             server_base_url, './agent/update_agent_advertise_address')
         self._url_remove_agent = urljoin(
             server_base_url, './agent/remove_agent')
-        self._url_get_free_browser = urljoin(
-            server_base_url, './free_browser/get_free_browser')
-        self._url_pop_free_browser = urljoin(
-            server_base_url, './free_browser/pop_free_browser')
-        self._url_add_free_browser = urljoin(
-            server_base_url, './free_browser/add_free_browser')
-        self._url_delete_free_browser = urljoin(
-            server_base_url, './free_browser/delete_free_browser')
+        self._url_add_browser_agent_map = urljoin(
+            server_base_url, './browser_agent_map/add_browser_agent_map')
+        self._url_delete_browser_agent_map = urljoin(
+            server_base_url, './browser_agent_map/delete_browser_agent_map')
 
         self.session = ClientSession()
 
@@ -101,50 +97,25 @@ class GeppyttoApiClient:
                 self._url_remove_agent, json=data) as resp:
             return await resp.json()
 
-    async def pop_free_browser(
-            self, agent_id: str = None, user_id: str = None):
-
-        async with self.session.get(
-                self._url_pop_free_browser, params={
-                    'agent_id': agent_id, 'user_id': user_id}) as resp:
-            return await resp.json()
-
-    async def get_free_browser(
-            self, agent_id: str = None, user_id: str = None):
-
-        params = {}
-        if agent_id is not None:
-            params['agent_id'] = agent_id
-        if user_id is not None:
-            params['user_id'] = user_id
-
-        async with self.session.get(
-                self._url_get_free_browser, params=params) as resp:
-            return await resp.json()
-
-    async def delete_free_browser(
-            self, id_: int = None, user_id: int = None, agent_id: int = None):
-        params = {}
-        if id_ is not None:
-            params['id'] = id_
-        elif user_id is not None:
-            params['user_id'] = user_id
+    async def delete_browser_agent_map(
+            self, user_id: int = None, bid: str = None, agent_id: int = None):
+        if user_id is not None and bid is not None:
+            params = {'user_id': user_id, 'bid': bid}
         elif agent_id is not None:
-            params['agent_id'] = agent_id
-
+            params = {'agent_id': agent_id}
+        else:
+            return None
         async with self.session.delete(
-                self._url_delete_free_browser, params=params) as resp:
+                self._url_delete_browser_agent_map, params=params) as resp:
             return await resp.json()
 
-    async def add_free_browser(
-            self, advertise_address: str, agent_id: str, user_id: str,
-            is_steady: bool):
+    async def add_browser_agent_map(
+            self, user_id: int, bid: str, agent_id: int):
 
         async with self.session.post(
-            self._url_add_free_browser, json={
-                'advertise_address': advertise_address,
+            self._url_add_browser_agent_map, json={
                 'agent_id': agent_id,
                 'user_id': user_id,
-                'is_steady': is_steady}
+                'bid': bid}
         ) as resp:
             return await resp.json()

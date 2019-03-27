@@ -5,6 +5,7 @@ import asyncio
 import urllib
 import time
 import websockets
+import random
 
 from ttlru import TTLRU
 
@@ -12,12 +13,10 @@ from geppytto.api_server import ApiServerSharedVars as ASSV
 from geppytto.websocket_proxy import WebsocketProxyWorker
 from geppytto.utils import parse_bool
 from geppytto.settings import BROWSER_PER_AGENT
-from geppytto.storage.models import BusyEventModel, BusyEventsTypeEnum
+from geppytto.storage.models import (
+    BusyEventModel, BusyEventsTypeEnum, BrowserAgentMapModel)
 
 logger = logging.getLogger()
-
-
-busy_event_rate_limiter = TTLRU(1024, ttl=10**10)
 
 
 def get_access_token_from_req(req):
@@ -44,15 +43,15 @@ async def get_user_info_by_access_token(access_token):
 
 
 async def browser_websocket_connection_handler(
-        request, client_ws, browser_token):
+        request, client_ws, bid):
 
     await asyncio.shield(
         _browser_websocket_connection_handler(
-            request, client_ws, browser_token))
+            request, client_ws, bid))
 
 
 async def _browser_websocket_connection_handler(
-        request, client_ws, browser_token):
+        request, client_ws, bid):
 
     access_token = get_access_token_from_req(request)
     user_info = await get_user_info_by_access_token(access_token)
@@ -66,60 +65,46 @@ async def _browser_websocket_connection_handler(
 
     browser_name = request.raw_args.get('browser_name', None)
 
-    for retry in range(BROWSER_PER_AGENT):
-
-        if browser_name is None:
-            browser = await pop_free_browser(user_id=user_id)
-        else:
-            named_browser_info = await get_agent_id_for_named_browser(
-                user_id, browser_name)
-            if named_browser_info is None:
-                await client_ws.send('No Named Browser')
-                logger.info(
-                    f'No Named Browser user:{user_info["id"]} '
-                    f'browser_name: {browser_name}')
-                return
-            browser = await pop_free_browser(
-                agent_id=named_browser_info['agent_id'])
-
-        if browser is None:
-            if browser_name is None:
-
-                if user_id not in busy_event_rate_limiter:
-
-                    busy_event_rate_limiter[user_id] = 1
-
-                    busy_event = BusyEventModel(
-                        user_id=user_id,
-                        event_type=BusyEventsTypeEnum.ALL_BROWSER_BUSY,
-                        last_report_time=int(time.time()*1000)
-                    )
-                    await ASSV.mysql_conn.add_busy_event(busy_event)
-
-            await client_ws.send('No Free Browser')
-            logger.info(f'No Free Browser user:{user_info["id"]}')
-            return
-
-        ret, browser_ws = await connect_to_agent(request, browser)
-        if ret == 'OK':
-            await run_proxy_to_agent(client_ws, browser_ws)
-            break
-        elif ret == 'Unknown Token':
+    for retry in range(2):
+        agent = await get_agent_for_user(user_id, bid, browser_name)
+        if agent is None:
+            logger.info(f'get_agent_for_user got None user_id: {user_id}')
             continue
 
+        ret, browser_ws = await connect_to_agent(request, agent, bid)
+        if ret == 'OK':
+            await run_proxy_to_agent(client_ws, browser_ws)
+            return
 
-async def connect_to_agent(request, browser):
+    else:
+        if browser_name is not None:
+            await client_ws.send('No Named Browser')
+            logger.info(
+                f'No Named Browser user:{user_info["id"]} '
+                f'browser_name: {browser_name}')
+        else:
+            await client_ws.send('No Alive Agent')
+            logger.info(f'No Alive Agent user:{user_info["id"]}')
+            # TODO trigger busy event
+        return
+
+
+async def connect_to_agent(request, agent: dict, bid: str):
     browser_ws = None
     try:
         querys = {}
         headless = request.raw_args.get('headless', True)
-        browser_name = request.raw_args.get('headless')
+        browser_name = request.raw_args.get('browser_name')
         querys['headless'] = headless
-        if browser_name:
+        if browser_name is not None:
             querys['browser_name'] = headless
 
         query_string = urllib.parse.urlencode(querys)
-        agent_url = f'{browser["advertise_address"]}?{query_string}'
+        ws_url = f'ws{agent["advertise_address"][4:]}'
+        agent_url = (
+            f'{ws_url}/proxy/devtools/browser/{bid}?{query_string}')
+
+        print(agent_url)
         browser_ws = await asyncio.wait_for(
             websockets.connect(agent_url), timeout=2)
 
@@ -146,15 +131,47 @@ async def run_proxy_to_agent(client_ws, browser_ws):
         logger.exception('run_proxy_to_agent')
 
 
-async def pop_free_browser(user_id: int = None, agent_id: int = None):
-    browser = await ASSV.mysql_conn.pop_free_browser(
-        user_id=user_id, agent_id=agent_id)
-    if browser.value['id'] is None:
-        return None
-    return browser.value
+async def get_agent_for_user(user_id: int, bid: str, browser_name: str = None):
+    if browser_name is None:
 
+        # first we check if there is map for that bid
+        ret = await ASSV.mysql_conn.get_agent_id_by_browser_id(user_id, bid)
+        if ret.error is not None:
+            logger.error('get_agent_id_by_browser_id error')
+            return None
+        if ret.value is not None:
+            agent = await ASSV.mysql_conn.get_agent_info(
+                id_=ret.value['agent_id'])
+            return agent.value
 
-async def get_agent_id_for_named_browser(user_id: int, browser_name: str):
-    named_browser = await ASSV.mysql_conn.get_named_browser(
-        user_id, browser_name)
-    return named_browser.value
+        # if we reach here, no exist bid found, we randomly choose a agent
+        ret = await ASSV.mysql_conn.get_alive_agent_for_user(user_id)
+        if ret.error is not None:
+            logger.error('get_alive_agent_for_user error')
+            return None
+        agent = random.choice(ret.value)
+
+        # Register the map
+        bam = BrowserAgentMapModel(
+            user_id=user_id,
+            bid=bid,
+            agent_id=agent['id'],
+            create_time=int(time.time()*1000)
+        )
+        ret = await ASSV.mysql_conn.add_browser_agent_map(bam)
+        if ret.error is not None:
+            # if register failed, maybe because other client registered it
+            logger.error('add_browser_agent_map error')
+            return None
+
+        return agent
+
+    else:
+        named_browser = await ASSV.mysql_conn.get_named_browser(
+            user_id, browser_name)
+        if named_browser.value is None:
+            return None
+
+        agent = await ASSV.mysql_conn.get_agent_info(
+            id_=named_browser.value['agent_id'])
+        return agent.value

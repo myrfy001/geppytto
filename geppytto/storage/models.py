@@ -33,6 +33,10 @@ class LimitRulesModel(BaseModel):
     pass
 
 
+class BrowserAgentMapModel(BaseModel):
+    pass
+
+
 class CursorClassFactory:
     cache = {}
 

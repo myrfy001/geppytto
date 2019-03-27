@@ -20,13 +20,14 @@ logger = logging.getLogger()
 class BrowserPool:
 
     def __init__(self):
-        self.free_browsers = {}
-        self.busy_browsers = {}
+        self.busy_browsers: Dict[str, Browser] = {}
 
-        self.maybe_zombie_free_browsers = []
         self.maybe_out_of_control_pids = []
 
         self.last_idle_time = time.time()
+
+        self.get_browser_sem = asyncio.BoundedSemaphore(
+            value=BROWSER_PER_AGENT)
 
     async def _close_process(self, proc: psutil.Process):
         try:
@@ -91,89 +92,76 @@ class BrowserPool:
         logger.info(f'out of control took {et}')
 
     def is_full(self):
-        return (len(self.free_browsers) + len(self.busy_browsers)
-                >= BROWSER_PER_AGENT)
+        return len(self.busy_browsers) >= BROWSER_PER_AGENT
 
     def is_idle(self):
         return not bool(self.busy_browsers)
 
-    async def put_browser_to_pool(self):
-        if self.is_full():
-            return False
+    async def get_browser(self, bid: str, no_wait: bool = False):
+
         if ASV.soft_exit:
-            return False
-        new_token = str(uuid.uuid4())
-        host_port = ASV.advertise_address[7:]
-        adv_addr = (
-            f'ws://{host_port}/proxy/devtools/browser/{new_token}')
-
-        self.free_browsers[new_token] = adv_addr
-        try:
-            ret = await ASV.api_client.add_free_browser(
-                adv_addr, ASV.agent_id, ASV.user_id, ASV.is_node_steady
-            )
-        except Exception:
-            self.free_browsers.pop(new_token, None)
-            raise
-
-        if ret['data'] is not True:
-            self.free_browsers.pop(new_token, None)
-            return False
-        return True
-
-    async def check_free_browser_db_mis_match(self):
-        '''
-        This function must be called periodically to ensure no mismatch between
-        DB and this agent process' memory pool. Suppose the corner case may be
-        agent think it has put a free item to DB but DB doesn't recored it. 
-        In this case, that token will stay in self.free_browsers forever. This
-        function will handle this case
-        '''
-        ret = await ASV.api_client.get_free_browser(agent_id=ASV.agent_id)
-        db_view = ret['data']
-        db_view_tokens = [x['advertise_address'].rsplit('/', 1)[-1]
-                          for x in db_view]
-
-        # First, check last suspicioned items, if these items still in
-        # self.free_browsers, then remove them
-        for token in self.maybe_zombie_free_browsers:
-            self.free_browsers.pop(token, None)
-
-        # Second check if there a new suspected items and save the for the next
-        # round check. If the token not show up in the database, it may be got
-        # by client and the connection hasn't be setup, so we save them and
-        # check them later.
-        self.maybe_zombie_free_browsers = [
-            token for token in self.free_browsers
-            if token not in db_view_tokens]
-
-    def get_browser(self, token):
-        browser = self.free_browsers.pop(token, None)
-        if browser is not None:
-            browser = Browser(self)
-            self.busy_browsers[token] = browser
-            return browser
-        else:
             return None
 
-    def release_browser(self, token: str):
-        self.busy_browsers.pop(token, None)
+        browser = self.busy_browsers.get(bid, None)
+        if browser is not None:
+            return browser
+
+        if no_wait:
+            return None
+
+        await self.get_browser_sem.acquire()
+        browser = Browser(bid)
+
+        self.busy_browsers[bid] = browser
+        return browser
+
+    def release_browser(self, bid: str):
+        self.busy_browsers.pop(bid, None)
+        self.get_browser_sem.release()
         if not self.busy_browsers:
             self.last_idle_time = time.time()
 
 
 class Browser:
-    def __init__(self, browser_pool: BrowserPool):
-        self.browser_pool = browser_pool
-        self.browser = None
-        self.proxy_worker = None
+    def __init__(self, bid: str):
+        self.bid = bid
+        self._browser = None
         self.browser_debug_url = None
         self.pid = None
         self.closed = False
         self.launcher = None
+        self.client_count = 0
+
+    def add_client(self):
+        if self.closed:
+            return False
+        self.client_count += 1
+        return True
+
+    async def remove_client(self):
+        self.client_count -= 1
+
+        if self.client_count <= 0:
+            try:
+                await self.close()
+            except Exception:
+                logger.exception(
+                    'remove_client close browser failed')
+
+            try:
+                await ASV.api_client.delete_browser_agent_map(
+                    ASV.user_id, self.bid)
+            except Exception:
+                logger.exception(
+                    'remove_client delete browser_agent_map failed')
+            ASV.browser_pool.release_browser(self.bid)
 
     async def run(self, user_data_dir: str = None, headless: bool = True,
                   no_sandbox=True):
+
+        # already launched
+        if self.launcher is not None:
+            return
 
         args = ['--no-sandbox']
 
@@ -191,18 +179,18 @@ class Browser:
         launcher = Launcher(options)
         self.launcher = launcher
         browser = await launcher.launch()
-        self.browser = browser
+        self._browser = browser
         self.pid = launcher.proc.pid
         logger.info(f'successful launch browser pid={self.pid}')
-        self.browser_debug_url = self.browser._connection.url
+        self.browser_debug_url = self._browser._connection.url
 
-    async def close(self, token):
+    async def close(self):
         for retry in range(3):
-            if self.browser is None:
+            if self._browser is None:
                 await asyncio.sleep(0.5*retry)
                 continue
             try:
-                await self.browser.close()
+                await self._browser.close()
                 logger.info(f'successful close browser pid={self.pid}')
                 self.closed = True
                 break
@@ -214,13 +202,3 @@ class Browser:
                 self.launcher.proc.wait()
                 logger.exception(
                     f'close browser kill wait finish pid={self.pid}')
-
-    # def __del__(self):
-    #     if not self.closed:
-    #         logger.error(f'close browser __del__ pid={self.pid}')
-    #         self.launcher.proc.kill()
-    #         logger.error(
-    #             f'close browser __del__ kill signal sent pid={self.pid}')
-    #         self.launcher.proc.wait()
-    #         logger.error(
-    #             f'close browser __del__ kill wait finish pid={self.pid}')

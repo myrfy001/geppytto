@@ -7,9 +7,8 @@ from .node import get_node_info, register_node
 from .agent import (
     get_agent_info, get_free_agent_slot, agent_health_report,
     update_agent_advertise_address, remove_agent)
-from .free_browser import (
-    pop_free_browser, add_free_browser, get_free_browser,
-    delete_free_browser)
+from .browser_agent_map import (
+    add_browser_agent_map, delete_browser_agent_map)
 from .named_browser import (add_named_browser)
 from .user import add_user
 from .limit_rule import upsert_limit
@@ -45,13 +44,12 @@ internal_bp.add_route(remove_agent,
                       methods=('DELETE',))
 
 
-internal_bp.add_route(get_free_browser, '/free_browser/get_free_browser')
-internal_bp.add_route(pop_free_browser, '/free_browser/pop_free_browser')
-internal_bp.add_route(delete_free_browser,
-                      '/free_browser/delete_free_browser',
+internal_bp.add_route(add_browser_agent_map,
+                      '/browser_agent_map/add_browser_agent_map')
+internal_bp.add_route(delete_browser_agent_map,
+                      '/browser_agent_map/delete_browser_agent_map',
                       methods=('DELETE',))
-internal_bp.add_route(add_free_browser, '/free_browser/add_free_browser',
-                      methods=('POST',))
+
 
 external_bp.add_route(add_named_browser, '/named_browser/add_named_browser',
                       methods=('POST',))
