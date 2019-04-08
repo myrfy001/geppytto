@@ -18,7 +18,7 @@ from . import BaseStorageAccrssor
 from .models import CursorClassFactory as CCF
 from .models import (
     UserModel, BusyEventModel, LimitRulesModel, LimitRulesTypeEnum, NodeModel,
-    BrowserAgentMapModel, BusyEventsTypeEnum)
+    BrowserAgentMapModel)
 
 logger = logging.getLogger()
 
@@ -69,13 +69,13 @@ class NodeMixIn:
         })
         return ret
 
-    async def get_alive_node(self, last_seen_time: int, is_steady: int):
+    async def get_alive_node(self, last_seen_time: int, is_steady: bool):
         sql = dedent('''\
             select * from node where last_seen_time>%(last_seen_time)s and is_steady=%(is_steady)s
             ''')
         ret = await self._execute_fetch_all(
             sql, {
-                'is_steady': is_steady,
+                'is_steady': 1 if is_steady else 0,
                 'last_seen_time': last_seen_time
             })
         return ret
@@ -231,29 +231,29 @@ class BusyEventMixIn:
     async def add_busy_event(self, busy_event: BusyEventModel):
         sql = dedent('''\
             insert into busy_event 
-            (user_id, event_type, last_report_time) values (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE last_report_time=%s
+            (user_id, agent_id, last_report_time) values 
+            (%(user_id)s, %(agent_id)s, %(last_report_time)s)
+            ON DUPLICATE KEY UPDATE last_report_time=%(last_report_time)s
             ''')
-        ret = await self._execute_fetch_one(
-            sql, (busy_event.get('user_id'),
-                  busy_event.get('event_type'),
-                  busy_event.get('last_report_time'),
-                  busy_event.get('last_report_time')),
-            CCF.get(BusyEventModel))
+
+        busy_event['last_report_time'] = int(time.time() * 1000)
+        ret = await self._execute_fetch_one(sql, busy_event,
+                                            CCF.get(BusyEventModel))
         if ret.error is not None:
             ret.msg = 'add busy_event failed'
         return ret
 
     async def get_recent_browser_busy_events(self):
 
-        last_report_time = int(time.time()-5) * 1000
+        last_report_time = int(time.time()-10) * 1000
         sql = dedent('''\
-            select * from busy_event where last_report_time>%(last_report_time)s and event_type=%(event_type)s order by last_report_time DESC limit 100
+            select user_id, count(*) as busy_count from busy_event  
+            where last_report_time>%(last_report_time)s 
+            group by user_id limit 100
             ''')
         ret = await self._execute_fetch_all(
             sql, {
-                'last_report_time': last_report_time,
-                'event_type': BusyEventsTypeEnum.ALL_BROWSER_BUSY
+                'last_report_time': last_report_time
             })
         return ret
 
@@ -262,32 +262,53 @@ class LimitRuleMixIn:
 
     async def add_rule(self, rule: LimitRulesModel):
         sql = dedent('''\
-            insert into limit_rule (`owner_id`, `type`, `limit`, `current`) values( %(owner_id)s, %(type)s, %(limit)s, %(current)s)
+            insert into view_limit_rule_write_checker (`owner_id`, `type`, `max_limit`, `min_limit`, `request`, `current`) 
+            values( %(owner_id)s, %(type)s, %(max_limit)s, %(min_limit)s, %(request)s, %(current)s)
             ''')
         ret = await self._execute_fetch_all(
             sql, {
                 'owner_id': rule['owner_id'],
                 'type': rule['type'],
-                'limit': rule['limit'],
+                'max_limit': rule['max_limit'],
+                'min_limit': rule['min_limit'],
+                'request': rule['request'],
                 'current': rule['current'],
             })
         return ret
 
     async def get_free_limit_rules(
-            self, rule_type: int, owner_ids: List = None):
+            self, rule_type: str, owner_ids: List = None):
 
         if owner_ids is not None:
             sql = dedent('''\
-                select * from limit_rule where `type`=%(type)s and owner_id in %(user_ids)s and ratio < 0.99999
+                select * from limit_rule where `type`=%(type)s and owner_id in %(owner_ids)s and diff < 0
                 ''')
         else:
             sql = dedent('''\
-                select * from limit_rule where `type`=%(type)s and ratio < 0.99999
+                select * from limit_rule where `type`=%(type)s and diff < 0
                 ''')
 
         ret = await self._execute_fetch_all(
             sql, {
-                'user_ids': owner_ids,
+                'owner_ids': owner_ids,
+                'type': rule_type
+            })
+        return ret
+
+    async def get_request_not_reach_max_limit_rule(
+            self, rule_type: str, owner_ids: List = None):
+        if owner_ids is not None:
+            sql = dedent('''\
+                select * from limit_rule where `type`=%(type)s and owner_id in %(owner_ids)s and request >= min_limit and request < max_limit
+                ''')
+        else:
+            sql = dedent('''\
+                select * from limit_rule where `type`=%(type)s and request >= min_limit and request < max_limit
+                ''')
+
+        ret = await self._execute_fetch_all(
+            sql, {
+                'owner_ids': owner_ids,
                 'type': rule_type
             })
         return ret
@@ -298,16 +319,45 @@ class LimitRuleMixIn:
             set_clause_parts.append('owner_id=%{owner_id}s')
         if limit_model.get('type') is not None:
             set_clause_parts.append('`type`=%{type}s')
-        if limit_model.get('limit') is not None:
-            set_clause_parts.append('`limit`=%{limit}s')
+        if limit_model.get('max_limit') is not None:
+            set_clause_parts.append('`max_limit`=%{max_limit}s')
+        if limit_model.get('min_limit') is not None:
+            set_clause_parts.append('`min_limit`=%{min_limit}s')
+        if limit_model.get('request') is not None:
+            set_clause_parts.append('`request`=%{request}s')
         if limit_model.get('current') is not None:
             set_clause_parts.append('`current`=%{current}s')
 
         set_clause = ','.join(set_clause_parts)
 
-        sql = f'update limit_rule set {set_clause} where id=%(id)s'
+        sql = f'update view_limit_rule_write_checker set {set_clause} where id=%(id)s'
 
         ret = await self._execute(sql, limit_model)
+        return ret
+
+    async def inc_agent_request_limit(
+            self, user_id: int, is_steady: bool, delta: int):
+
+        sql = dedent('''\
+            update view_limit_rule_write_checker set request=request+%(delta)s where owner_id=%(user_id)s and `type`=%(type_user)s;
+            ''')
+        args = {'user_id': user_id, 'delta': delta}
+        if is_steady:
+            args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
+        else:
+            args['type_user'] = LimitRulesTypeEnum.DYNAMIC_AGENT_ON_USER
+
+        ret = await self._execute(sql, args)
+        return ret
+
+    async def get_mismatch_rules(self, rule_type: str = None):
+        if rule_type is None:
+            type_filter_clause = ''
+        else:
+            type_filter_clause = '`type`=%(type)s and '
+        sql = f'select * from limit_rule where {type_filter_clause} `diff` != 0'
+        args = {'type': rule_type}
+        ret = await self._execute_fetch_all(sql, args)
         return ret
 
 
@@ -319,40 +369,44 @@ class MultiTableOperationMixIn:
         sql = dedent('''\
             START TRANSACTION;
             insert into agent (name, user_id, node_id, last_ack_time) values (%(name)s, %(user_id)s, %(node_id)s, 0);
-            update limit_rule set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s;
-            update limit_rule set current=current+1 where owner_id=%(node_id)s and `type`=%(type_node)s;
+            update view_limit_rule_write_checker set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s;
+            update view_limit_rule_write_checker set current=current+1 where owner_id=%(node_id)s and `type`=%(type_node)s;
             COMMIT;
             ''')
         args = {'name': name, 'user_id': user_id, 'node_id': node_id,
-                'type_node': LimitRulesTypeEnum.MAX_AGENT_ON_NODE}
+                'type_node': LimitRulesTypeEnum.AGENT_ON_NODE}
         if is_steady:
-            args['type_user'] = LimitRulesTypeEnum.MAX_STEADY_AGENT_ON_USER
+            args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
         else:
-            args['type_user'] = LimitRulesTypeEnum.MAX_DYNAMIC_AGENT_ON_USER
+            args['type_user'] = LimitRulesTypeEnum.DYNAMIC_AGENT_ON_USER
 
-        ret = await self._execute(
-            sql, args)
+        ret = await self._execute(sql, args)
         return ret
 
     async def remove_agent(
             self, agent_id: int, user_id: int, node_id: int, is_steady: bool):
-        sql = dedent('''\
+
+        if not is_steady:
+            request_modify_clause = ',request=request-1'
+        else:
+            request_modify_clause = ''
+
+        sql = dedent(f'''\
             START TRANSACTION;
             delete from agent where id=%(agent_id)s;
-            update limit_rule set current=current-1 where owner_id=%(user_id)s and `type`=%(type_user)s and current>0;
-            update limit_rule set current=current-1 where owner_id=%(node_id)s and `type`=%(type_node)s and current>0;
+            update view_limit_rule_write_checker set current=current-1 {request_modify_clause} where owner_id=%(user_id)s and `type`=%(type_user)s;
+            update view_limit_rule_write_checker set current=current-1 where owner_id=%(node_id)s and `type`=%(type_node)s;
             COMMIT;
             ''')
         args = {'agent_id': agent_id, 'user_id': user_id, 'node_id': node_id,
-                'type_node': LimitRulesTypeEnum.MAX_AGENT_ON_NODE}
+                'type_node': LimitRulesTypeEnum.AGENT_ON_NODE}
 
         if is_steady:
-            args['type_user'] = LimitRulesTypeEnum.MAX_STEADY_AGENT_ON_USER
+            args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
         else:
-            args['type_user'] = LimitRulesTypeEnum.MAX_DYNAMIC_AGENT_ON_USER
+            args['type_user'] = LimitRulesTypeEnum.DYNAMIC_AGENT_ON_USER
 
-        ret = await self._execute(
-            sql, args)
+        ret = await self._execute(sql, args)
         print(ret.error)
         return ret
 

@@ -13,10 +13,10 @@ from geppytto.utils.background_task_mgr import (
     BackgroundTaskBase, BackgroundTaskManager)
 
 from geppytto.background_task.tasks.dynamic_agent import (
-    BgtCheckBusyEventAndAddDynamicAgent)
+    BgtCheckBusyEventAndChangeDynamicAgentRequest)
 
-from geppytto.background_task.tasks.steady_agent import (
-    BgtCheckRulesAndAddSteadyAgent)
+from geppytto.background_task.tasks.agent_adjuster import (
+    BgtCheckAgentMismatchAndAdjust)
 
 from ttlru import TTLRU
 
@@ -53,16 +53,16 @@ def start_background_task():
     if BTSV.bgt_manager is None:
         BTSV.bgt_manager = BackgroundTaskManager()
 
-    check_busy_event_and_add_dynamic_agent_task = (
-        BgtCheckBusyEventAndAddDynamicAgent())
+    check_busy_event_and_change_dynamic_agent_request_task = (
+        BgtCheckBusyEventAndChangeDynamicAgentRequest())
 
-    check_rules_and_add_steady_agent_task = (
-        BgtCheckRulesAndAddSteadyAgent())
+    check_agent_mismatch_and_adjust_task = (
+        BgtCheckAgentMismatchAndAdjust())
 
     BTSV.bgt_manager.launch_bg_task(
-        check_busy_event_and_add_dynamic_agent_task,
+        check_busy_event_and_change_dynamic_agent_request_task,
         API_SERVER_CHECK_BUSY_EVENT_TIME)
 
     BTSV.bgt_manager.launch_bg_task(
-        check_rules_and_add_steady_agent_task,
+        check_agent_mismatch_and_adjust_task,
         API_SERVER_CHECK_BUSY_EVENT_TIME)

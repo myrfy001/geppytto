@@ -3,14 +3,10 @@
 from aiomysql.cursors import DictCursor
 
 
-class BusyEventsTypeEnum:
-    ALL_BROWSER_BUSY = 1
-
-
 class LimitRulesTypeEnum:
-    MAX_AGENT_ON_NODE = 1
-    MAX_STEADY_AGENT_ON_USER = 2
-    MAX_DYNAMIC_AGENT_ON_USER = 3
+    AGENT_ON_NODE = 'AGENT_ON_NODE'
+    STEADY_AGENT_ON_USER = 'STEADY_AGENT_ON_USER'
+    DYNAMIC_AGENT_ON_USER = 'DYNAMIC_AGENT_ON_USER'
 
 
 class BaseModel(dict):

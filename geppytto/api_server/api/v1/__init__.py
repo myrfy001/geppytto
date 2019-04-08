@@ -12,6 +12,7 @@ from .browser_agent_map import (
 from .named_browser import (add_named_browser)
 from .user import add_user
 from .limit_rule import upsert_limit
+from .busy_event import add_busy_event
 
 from ..utils import get_err_response
 
@@ -49,6 +50,9 @@ internal_bp.add_route(add_browser_agent_map,
 internal_bp.add_route(delete_browser_agent_map,
                       '/browser_agent_map/delete_browser_agent_map',
                       methods=('DELETE',))
+
+internal_bp.add_route(add_busy_event, '/busy_event/add_busy_event',
+                      methods=('POST',))
 
 
 external_bp.add_route(add_named_browser, '/named_browser/add_named_browser',

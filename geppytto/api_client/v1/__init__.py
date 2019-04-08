@@ -24,6 +24,8 @@ class GeppyttoApiClient:
             server_base_url, './browser_agent_map/add_browser_agent_map')
         self._url_delete_browser_agent_map = urljoin(
             server_base_url, './browser_agent_map/delete_browser_agent_map')
+        self._url_add_busy_event = urljoin(
+            server_base_url, './busy_event/add_busy_event')
 
         self.session = ClientSession()
 
@@ -118,4 +120,11 @@ class GeppyttoApiClient:
                 'user_id': user_id,
                 'bid': bid}
         ) as resp:
+            return await resp.json()
+
+    async def add_busy_event(self, user_id: int, agent_id: int):
+        async with self.session.post(
+            self._url_add_busy_event, json={
+                'agent_id': agent_id,
+                'user_id': user_id}) as resp:
             return await resp.json()

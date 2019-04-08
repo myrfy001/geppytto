@@ -50,13 +50,6 @@ async def agent_main(args):
 
         start_server()
 
-        await api_client.register_node(ASV.node_name)
-        node_info = await api_client.get_node_info(name=args.node_name)
-        if node_info['code'] != 200:
-            raise Exception("can't get node info")
-        node_info = node_info['data']
-        ASV.is_node_steady = node_info['is_steady']
-        ASV.node_id = node_info['id']
         await bind_self_to_agent_slot()
         start_background_task()
 
@@ -69,6 +62,15 @@ async def agent_main(args):
 
 async def bind_self_to_agent_slot():
     while ASV.running:
+
+        await ASV.api_client.register_node(ASV.node_name)
+        node_info = await ASV.api_client.get_node_info(name=ASV.node_name)
+        if node_info['code'] != 200:
+            raise Exception("can't get node info")
+        node_info = node_info['data']
+        ASV.is_node_steady = node_info['is_steady']
+        ASV.node_id = node_info['id']
+
         # for a new launched node, must update is's last seen time
         await ASV.api_client.agent_health_report(None, ASV.node_id)
         free_agent_slot = await (
@@ -136,11 +138,11 @@ async def teardown_process():
 
 def signal_handler(signame):
 
-    def exit_timer():
+    def exit_timer(signame):
         time.sleep(1)
-        logger.info('Force Exit by Thread')
+        logger.info(f'Force Exit by Thread, requested by {signame}')
         sys.exit()
 
     ASV.set_soft_exit()
-    th = threading.Thread(target=exit_timer)
+    th = threading.Thread(target=exit_timer, args=(signame,))
     th.start()

@@ -6,9 +6,12 @@ import logging
 import argparse
 import sys
 from os.path import abspath, dirname
-from os import environ, fork, waitpid
+from os import environ, fork, waitpid, kill
+import signal
 
 import asyncio
+
+from xvfbwrapper import Xvfb
 
 from pyppeteer.launcher import executablePath
 
@@ -61,12 +64,22 @@ def main():
         pid = fork()
         if pid != 0:
             # parent:
-            waitpid(pid, 0)
+            try:
+                waitpid(pid, 0)
+            except KeyboardInterrupt:
+                kill(pid, signal.SIGTERM)
+                break
+
             continue
         else:
             # child
-            run_main_program_in_forked_child(args)
-            break
+            try:
+                run_main_program_in_forked_child(args)
+                break
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                break
 
 
 def run_main_program_in_forked_child(args):
@@ -77,4 +90,9 @@ def run_main_program_in_forked_child(args):
 
 
 if __name__ == '__main__':
+    try:
+        vdisplay = Xvfb(width=1280, height=740, colordepth=16)
+        vdisplay.start()
+    except Exception:
+        pass
     main()

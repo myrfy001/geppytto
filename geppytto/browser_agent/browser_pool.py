@@ -97,7 +97,8 @@ class BrowserPool:
     def is_idle(self):
         return not bool(self.busy_browsers)
 
-    async def get_browser(self, bid: str, no_wait: bool = False):
+    async def get_browser(
+            self, bid: str, launch_options: dict, no_wait: bool = False):
 
         if ASV.soft_exit:
             return None
@@ -110,7 +111,14 @@ class BrowserPool:
             return None
 
         await self.get_browser_sem.acquire()
+
         browser = Browser(bid)
+
+        try:
+            await browser.run(launch_options)
+        except Exception:
+            self.get_browser_sem.release()
+            return None
 
         self.busy_browsers[bid] = browser
         return browser
@@ -156,14 +164,19 @@ class Browser:
                     'remove_client delete browser_agent_map failed')
             ASV.browser_pool.release_browser(self.bid)
 
-    async def run(self, user_data_dir: str = None, headless: bool = True,
-                  no_sandbox=True):
+    async def run(self, launch_options: dict):
 
         # already launched
         if self.launcher is not None:
             return
 
-        args = ['--no-sandbox']
+        user_data_dir = launch_options.get('user_data_dir', None)
+        headless = launch_options.get('headless', True)
+        no_sandbox = launch_options.get('no_sandbox', True)
+
+        args = []
+        if no_sandbox:
+            args.append('--no-sandbox')
 
         options = {
             'headless': headless,

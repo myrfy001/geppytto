@@ -13,8 +13,7 @@ from geppytto.api_server import ApiServerSharedVars as ASSV
 from geppytto.websocket_proxy import WebsocketProxyWorker
 from geppytto.utils import parse_bool
 from geppytto.settings import BROWSER_PER_AGENT
-from geppytto.storage.models import (
-    BusyEventModel, BusyEventsTypeEnum, BrowserAgentMapModel)
+from geppytto.storage.models import BrowserAgentMapModel, BusyEventModel
 
 logger = logging.getLogger()
 
@@ -75,6 +74,9 @@ async def _browser_websocket_connection_handler(
         if ret == 'OK':
             await run_proxy_to_agent(client_ws, browser_ws)
             return
+        else:
+            if browser_ws is not None:
+                await browser_ws.close()
 
     else:
         if browser_name is not None:
@@ -85,7 +87,11 @@ async def _browser_websocket_connection_handler(
         else:
             await client_ws.send('No Alive Agent')
             logger.info(f'No Alive Agent user:{user_info["id"]}')
-            # TODO trigger busy event
+            busy_event = BusyEventModel(
+                user_id=user_id,
+                agent_id=0
+            )
+            ret = await ASSV.mysql_conn.add_busy_event(busy_event)
         return
 
 
@@ -109,8 +115,6 @@ async def connect_to_agent(request, agent: dict, bid: str):
             websockets.connect(agent_url), timeout=2)
 
         ret = await browser_ws.recv()
-        if ret != 'OK':
-            browser_ws = None
 
         return ret, browser_ws
 
@@ -148,6 +152,9 @@ async def get_agent_for_user(user_id: int, bid: str, browser_name: str = None):
         ret = await ASSV.mysql_conn.get_alive_agent_for_user(user_id)
         if ret.error is not None:
             logger.error('get_alive_agent_for_user error')
+            return None
+
+        if not ret.value:
             return None
         agent = random.choice(ret.value)
 

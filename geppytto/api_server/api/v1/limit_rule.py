@@ -11,13 +11,15 @@ async def upsert_limit(req):
     id_ = req.json.get('id')
     owner_id = req.json.get('owner_id')
     type_ = req.json.get('type')
-    limit = req.json.get('limit')
+    max_limit = req.json.get('max_limit')
+    min_limit = req.json.get('min_limit')
+    request = req.json.get('request')
     current = req.json.get('current')
 
     if id_ is None:
         limit_model = LimitRulesModel(
-            owner_id=owner_id, type=type_, limit=limit, current=current
-        )
+            owner_id=owner_id, type=type_, max_limit=max_limit,
+            min_limit=min_limit, request=request, current=current)
         ret = await ASSV.mysql_conn.add_rule(limit_model)
         if ret.lastrowid is None:
             return get_err_response(None, msg='add limit failed')
@@ -25,10 +27,9 @@ async def upsert_limit(req):
             return get_ok_response(True)
 
     else:
-
         limit_model = LimitRulesModel(
-            id=id_, owner_id=owner_id, type=type_, limit=limit, current=current
-        )
+            id=id_, owner_id=owner_id, type=type_, max_limit=max_limit,
+            min_limit=min_limit, request=request, current=current)
 
         ret = await ASSV.mysql_conn.modify_limit(limit_model)
         if ret.lastrowid is None:

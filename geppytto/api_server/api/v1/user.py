@@ -38,8 +38,10 @@ async def add_user(req):
 
     limit_rule = LimitRulesModel(
         owner_id=new_user_id,
-        type=LimitRulesTypeEnum.MAX_STEADY_AGENT_ON_USER,
-        limit=steady_agent_count,
+        type=LimitRulesTypeEnum.STEADY_AGENT_ON_USER,
+        max_limit=steady_agent_count,
+        min_limit=0,
+        request=steady_agent_count,
         current=0
     )
     ret = await ASSV.mysql_conn.add_rule(limit_rule)
@@ -48,8 +50,10 @@ async def add_user(req):
 
     limit_rule = LimitRulesModel(
         owner_id=new_user_id,
-        type=LimitRulesTypeEnum.MAX_DYNAMIC_AGENT_ON_USER,
-        limit=dynamic_agent_count,
+        type=LimitRulesTypeEnum.DYNAMIC_AGENT_ON_USER,
+        max_limit=dynamic_agent_count,
+        min_limit=0,
+        request=0,
         current=0
     )
     ret = await ASSV.mysql_conn.add_rule(limit_rule)
