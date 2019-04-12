@@ -18,8 +18,7 @@ class AgentSharedVars:
 
     api_client = None
     node_name = None
-    node_id = None
-    is_node_steady = None
+    is_steady = None
     last_ack_time = None
 
     running = True

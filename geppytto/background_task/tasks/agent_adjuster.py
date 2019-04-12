@@ -33,25 +33,7 @@ class BgtCheckAgentMismatchAndAdjust(BackgroundTaskBase):
         users_need_to_scale_ids = [x['owner_id'] for x in ret.value]
         print('users_need_to_scale_ids', users_need_to_scale_ids)
 
-        ret = await BTSV.mysql_conn.get_alive_node(
-            last_seen_time=int(time.time()-20)*1000,
-            is_steady=is_steady)
-        if ret.error or not ret.value:
-            return
-        alive_nodes_ids = [x['id'] for x in ret.value]
-        print('alive_nodes_ids', alive_nodes_ids)
-
-        ret = await BTSV.mysql_conn.get_free_limit_rules(
-            rule_type=LimitRulesTypeEnum.AGENT_ON_NODE,
-            owner_ids=alive_nodes_ids)
-        if ret.error or not ret.value:
-            return
-
-        have_free_slot_alive_node_ids = [x['owner_id'] for x in ret.value]
-        print('have_free_slot_alive_node_ids', have_free_slot_alive_node_ids)
-
-        for user_id, node_id in zip(
-                users_need_to_scale_ids, have_free_slot_alive_node_ids):
+        for user_id in users_need_to_scale_ids:
             ret = await BTSV.mysql_conn.add_agent(
                 'agent_'+str(uuid.uuid4()),
-                user_id, node_id, is_steady=is_steady)
+                user_id, is_steady=is_steady)

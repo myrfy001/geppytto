@@ -8,7 +8,7 @@ import logging
 from asyncio import AbstractEventLoop
 import asyncio
 import aiomysql
-from aiomysql import DictCursor, IntegrityError
+from aiomysql import DictCursor, IntegrityError, Connection
 
 
 from geppytto.settings import AGENT_NO_ACTIVATE_THRESHOLD
@@ -17,7 +17,7 @@ from . import BaseStorageAccrssor
 
 from .models import CursorClassFactory as CCF
 from .models import (
-    UserModel, BusyEventModel, LimitRulesModel, LimitRulesTypeEnum, NodeModel,
+    UserModel, BusyEventModel, LimitRulesModel, LimitRulesTypeEnum,
     BrowserAgentMapModel)
 
 logger = logging.getLogger()
@@ -33,97 +33,47 @@ class MySQLQueryResult:
         self.msg = msg
 
 
-class NodeMixIn:
-
-    async def get_node_info(self, id_=None, name=None):
-        if id_ is not None:
-            sql = 'select * from node where id = %s'
-            val = id_
-        else:
-            sql = 'select * from node where name = %s'
-            val = name
-        ret = await self._execute_fetch_one(sql, (val,))
-        return ret
-
-    async def register_node(self, node: NodeModel):
-        sql = 'insert into node (name, is_steady, last_seen_time) values (%(name)s, 0, 0) ON DUPLICATE KEY UPDATE last_seen_time=%(last_seen_time)s'
-
-        ret = await self._execute(sql, {
-            'name': node['name'],
-            'last_seen_time': int(time.time()*1000)
-        })
-        return ret
-
-    async def modify_node(self, node: NodeModel):
-        set_clause_parts = []
-        if node.get('is_steady') is not None:
-            set_clause_parts.append('is_steady=%{is_steady}s')
-
-        set_clause = ','.join(set_clause_parts)
-
-        sql = f'update node set {set_clause} where id=%(id)s'
-
-        ret = await self._execute(sql, {
-            'id': node['id'],
-            'is_steady': node['is_steady'],
-        })
-        return ret
-
-    async def get_alive_node(self, last_seen_time: int, is_steady: bool):
-        sql = dedent('''\
-            select * from node where last_seen_time>%(last_seen_time)s and is_steady=%(is_steady)s
-            ''')
-        ret = await self._execute_fetch_all(
-            sql, {
-                'is_steady': 1 if is_steady else 0,
-                'last_seen_time': last_seen_time
-            })
-        return ret
-
-    async def update_node_last_seen_time(self, node_id: str):
-        sql = ('update node set last_seen_time = %(ti)s where id = %(id)s')
-        ti = int(time.time()*1000)
-        ret = await self._execute(sql, {'ti': ti, 'id': node_id})
-        ret.value = ti
-        return ret
-
-
 class AgentMixIn:
 
-    async def get_free_agent_slot(self, node_id: str):
-        sql = dedent('''\
-            START TRANSACTION;
-            set @id=null,@name=null,@advertise_address=null,@user_id=null,@node_id=null,@last_ack_time=null;
-
-            select id, name, advertise_address, user_id, node_id into
-                @id, @name, @advertise_address, @user_id, @node_id
-            from agent where node_id = %(node_id)s and last_ack_time < %(threshold)s
-               order by last_ack_time limit 1 for update;
-
-            set @last_ack_time=%(new_ack_time)s;
-            update agent set last_ack_time=@last_ack_time where id = @id;
-            commit;
-            select @id as id, @name as name, @advertise_address as advertise_address, @user_id as user_id, @node_id as node_id, @last_ack_time as last_ack_time;
-            ''')
-
+    async def bind_to_free_slot(
+            self, advertise_address: str, is_steady: bool):
         new_ack_time = int(time.time() * 1000)
         threshold = int(time.time() - AGENT_NO_ACTIVATE_THRESHOLD) * 1000
-        ret = await self._execute_last_recordset_fetchone(
-            sql, {'node_id': node_id, 'threshold': threshold,
-                  'new_ack_time': new_ack_time})
-        return ret
+        async with self.pool.acquire() as conn:
+            await conn.begin()
+            sql = '''select id, name, user_id, last_ack_time from agent where last_ack_time < %(threshold)s and is_steady=%(is_steady)s
+               order by last_ack_time limit 1 for update'''
+            ret = await self._execute_fetch_one(
+                sql,
+                args={'threshold': threshold, 'is_steady': is_steady},
+                conn=conn)
+            if ret.value is None or ret.error is not None:
+                await conn.commit()
+                return ret
+            agent_info = ret
+
+            sql = '''update agent set last_ack_time=%(last_ack_time)s, 
+            advertise_address=%(advertise_address)s where id = %(id)s;'''
+            ret = await self._execute(
+                sql,
+                args={
+                    'id': agent_info.value['id'],
+                    'last_ack_time': new_ack_time,
+                    'advertise_address': advertise_address},
+                conn=conn)
+            if ret.error is not None:
+                await conn.rollback()
+                return ret
+            else:
+                await conn.commit()
+                agent_info.value['last_ack_time'] = new_ack_time
+                return agent_info
 
     async def update_agent_last_ack_time(self, agent_id: str):
         sql = ('update agent set last_ack_time = %s where id = %s')
         ti = int(time.time()*1000)
         ret = await self._execute(sql, (ti, agent_id))
         ret.value = ti
-        return ret
-
-    async def update_agent_advertise_address(
-            self, agent_id: str, advertise_address: str):
-        sql = ('update agent set advertise_address = %s where id = %s')
-        ret = await self._execute(sql, (advertise_address, agent_id))
         return ret
 
     async def get_agent_info(self, id_=None, name=None):
@@ -158,7 +108,7 @@ class BrowserAgentMapMixIn:
     async def get_agent_id_by_browser_id(self, user_id: int, bid: str):
 
         sql = dedent('''\
-            select agent_id from browser_agent_map 
+            select agent_id from browser_agent_map
             where user_id=%(user_id)s and bid = %(bid)s;
             ''')
         return await self._execute_fetch_one(
@@ -193,8 +143,8 @@ class UserMixIn:
 
     async def add_user(self, user: UserModel):
         sql = dedent('''\
-            insert into user 
-            (name, password, access_token) 
+            insert into user
+            (name, password, access_token)
             values (%s, %s, %s)
             ''')
         ret = await self._execute_fetch_one(
@@ -230,8 +180,8 @@ class BusyEventMixIn:
 
     async def add_busy_event(self, busy_event: BusyEventModel):
         sql = dedent('''\
-            insert into busy_event 
-            (user_id, agent_id, last_report_time) values 
+            insert into busy_event
+            (user_id, agent_id, last_report_time) values
             (%(user_id)s, %(agent_id)s, %(last_report_time)s)
             ON DUPLICATE KEY UPDATE last_report_time=%(last_report_time)s
             ''')
@@ -247,8 +197,8 @@ class BusyEventMixIn:
 
         last_report_time = int(time.time()-10) * 1000
         sql = dedent('''\
-            select user_id, count(*) as busy_count from busy_event  
-            where last_report_time>%(last_report_time)s 
+            select user_id, count(*) as busy_count from busy_event
+            where last_report_time>%(last_report_time)s
             group by user_id limit 100
             ''')
         ret = await self._execute_fetch_all(
@@ -262,7 +212,7 @@ class LimitRuleMixIn:
 
     async def add_rule(self, rule: LimitRulesModel):
         sql = dedent('''\
-            insert into view_limit_rule_write_checker (`owner_id`, `type`, `max_limit`, `min_limit`, `request`, `current`) 
+            insert into view_limit_rule_write_checker (`owner_id`, `type`, `max_limit`, `min_limit`, `request`, `current`)
             values( %(owner_id)s, %(type)s, %(max_limit)s, %(min_limit)s, %(request)s, %(current)s)
             ''')
         ret = await self._execute_fetch_all(
@@ -364,55 +314,83 @@ class LimitRuleMixIn:
 class MultiTableOperationMixIn:
 
     async def add_agent(
-            self, name: str, user_id: int, node_id: int, is_steady: bool):
+            self, name: str, user_id: int, is_steady: bool):
 
-        sql = dedent('''\
-            START TRANSACTION;
-            insert into agent (name, user_id, node_id, last_ack_time) values (%(name)s, %(user_id)s, %(node_id)s, 0);
-            update view_limit_rule_write_checker set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s;
-            update view_limit_rule_write_checker set current=current+1 where owner_id=%(node_id)s and `type`=%(type_node)s;
-            COMMIT;
-            ''')
-        args = {'name': name, 'user_id': user_id, 'node_id': node_id,
-                'type_node': LimitRulesTypeEnum.AGENT_ON_NODE}
+        sql_update_rule = 'update view_limit_rule_write_checker set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s'
+        sql_insert_agent = 'insert into agent (name, user_id, last_ack_time) values (%(name)s, %(user_id)s, 0)'
+        args = {'name': name, 'user_id': user_id}
         if is_steady:
             args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
         else:
             args['type_user'] = LimitRulesTypeEnum.DYNAMIC_AGENT_ON_USER
 
-        ret = await self._execute(sql, args)
-        return ret
+        async with self.pool.acquire() as conn:
+            await conn.begin()
+            ret = await self._execute(sql_update_rule, args)
+            if ret.error is not None:
+                await conn.rollback()
+                return ret
+
+            ret = await self._execute(sql_insert_agent, args)
+            if ret.error is not None:
+                await conn.rollback()
+                return ret
+
+            await conn.commit()
+            return ret
 
     async def remove_agent(
-            self, agent_id: int, user_id: int, node_id: int, is_steady: bool):
+            self, agent_id: int, user_id: int, is_steady: bool):
 
-        if not is_steady:
-            request_modify_clause = ',request=request-1'
-        else:
-            request_modify_clause = ''
-
-        sql = dedent(f'''\
-            START TRANSACTION;
-            delete from agent where id=%(agent_id)s;
-            update view_limit_rule_write_checker set current=current-1 {request_modify_clause} where owner_id=%(user_id)s and `type`=%(type_user)s;
-            update view_limit_rule_write_checker set current=current-1 where owner_id=%(node_id)s and `type`=%(type_node)s;
-            COMMIT;
-            ''')
-        args = {'agent_id': agent_id, 'user_id': user_id, 'node_id': node_id,
-                'type_node': LimitRulesTypeEnum.AGENT_ON_NODE}
-
+        args = {'agent_id': agent_id, 'user_id': user_id}
         if is_steady:
+            request_modify_clause = ''
             args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
         else:
+            request_modify_clause = ',request=request-1'
             args['type_user'] = LimitRulesTypeEnum.DYNAMIC_AGENT_ON_USER
 
-        ret = await self._execute(sql, args)
-        print(ret.error)
-        return ret
+        sql_delete_agent = 'delete from agent where id=%(agent_id)s'
+        sql_update_rule = 'update view_limit_rule_write_checker set current=current-1 {request_modify_clause} where owner_id=%(user_id)s and `type`=%(type_user)s'
+        async with self.pool.acquire() as conn:
+            await conn.begin()
+            ret = await self._execute(sql_delete_agent, args)
+            if ret.error is not None:
+                await conn.rollback()
+                return ret
+
+            ret = await self._execute(sql_update_rule, args)
+            if ret.error is not None:
+                await conn.rollback()
+                return ret
+
+            await conn.commit()
+            return ret
+
+
+class _ExistConnectionWrapper:
+    '''
+    To use the same code for both exist connection or new connection from poll,
+    when an exist connection passed in, we wrap it so we can use it as a
+    context manager
+    '''
+
+    def __init__(self, conn: Connection):
+        self.conn = conn
+
+    def acquire(self):
+        return self
+
+    async def __aenter__(self):
+        return self.conn
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        # We do nothing here, it's upto the outer function to close the conn
+        return
 
 
 class MysqlStorageAccessor(
-        BaseStorageAccrssor, NodeMixIn, AgentMixIn, BrowserAgentMapMixIn,
+        BaseStorageAccrssor,  AgentMixIn, BrowserAgentMapMixIn,
         UserMixIn, NamedBrowserMixIn, BusyEventMixIn, LimitRuleMixIn,
         MultiTableOperationMixIn):
     def __init__(self, host: str, port: int, user: str, pw: str, db: str,
@@ -429,9 +407,11 @@ class MysqlStorageAccessor(
             host=self.host, port=self.port, user=self.user, password=self.pw,
             db=self.db, autocommit=True, maxsize=20, loop=self.loop)
 
-    async def _execute(self, sql, args, cursor_class=aiomysql.DictCursor):
+    async def _execute(self, sql, args, cursor_class=aiomysql.DictCursor,
+                       conn: Connection = None):
+        conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
-            with await self.pool as conn:
+            async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(cursor_class)
                 await cursor.execute(sql, args)
         except Exception as e:
@@ -440,9 +420,11 @@ class MysqlStorageAccessor(
         return MySQLQueryResult(lastrowid=cursor.lastrowid)
 
     async def _execute_fetch_one(
-            self, sql, args, cursor_class=aiomysql.DictCursor):
+            self, sql, args, cursor_class=aiomysql.DictCursor,
+            conn: Connection = None):
+        conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
-            with await self.pool as conn:
+            async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(cursor_class)
                 await cursor.execute(sql, args)
                 return MySQLQueryResult(
@@ -452,9 +434,11 @@ class MysqlStorageAccessor(
             return MySQLQueryResult(None, error=e)
 
     async def _execute_fetch_all(
-            self, sql, args, cursor_class=aiomysql.DictCursor):
+            self, sql, args, cursor_class=aiomysql.DictCursor,
+            conn: Connection = None):
+        conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
-            with await self.pool as conn:
+            async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(cursor_class)
                 await cursor.execute(sql, args)
                 return MySQLQueryResult(
@@ -463,9 +447,11 @@ class MysqlStorageAccessor(
             logger.exception('Mysql Access Error')
             return MySQLQueryResult(None, error=e)
 
-    async def _execute_last_recordset_fetchone(self, sql, args):
+    async def _execute_last_recordset_fetchone(self, sql, args,
+                                               conn: Connection = None):
+        conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
-            with await self.pool as conn:
+            async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(aiomysql.DictCursor)
                 await cursor.execute(sql, args)
                 while await cursor.nextset():

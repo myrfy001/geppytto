@@ -4,11 +4,10 @@ CREATE TABLE `agent` (
   `name` char(63) NOT NULL DEFAULT '',
   `advertise_address` char(255) NOT NULL DEFAULT '',
   `user_id` bigint(11) NOT NULL,
-  `node_id` bigint(11) NOT NULL,
+  `is_steady` tinyint(1) NOT NULL,
   `last_ack_time` bigint(15) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
-  KEY `node_id` (`node_id`),
   KEY `last_ack_time` (`last_ack_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -62,17 +61,6 @@ CREATE TABLE `named_browser` (
   `agent_id` bigint(11) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name_user_id_unique` (`name`,`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- Create syntax for TABLE 'node'
-CREATE TABLE `node` (
-  `id` bigint(11) unsigned NOT NULL AUTO_INCREMENT,
-  `name` char(63) NOT NULL DEFAULT '',
-  `is_steady` tinyint(1) NOT NULL,
-  `last_seen_time` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `idx_name` (`name`),
-  KEY `idx_last_seen_time` (`last_seen_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Create syntax for TABLE 'user'

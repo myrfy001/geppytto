@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--api_server', type=str,
                         default='http://localhost:9990')
     parser.add_argument('--node_name', type=str)
+    parser.add_argument('--is_steady', type=bool)
     parser.add_argument('--advertise_address', type=str)
     parser.add_argument('--chrome-executable-path', type=str, default=None)
     parser.add_argument('--user-data-dir', type=str, default=None)
@@ -45,7 +46,6 @@ def main():
         advertise_address_in_env = environ.get('GEPPYTTO_ADVERTISE_ADDR', None)
         advertise_address = advertise_address_in_env or node_ip
         advertise_address = f'http://{advertise_address}:{args.port}'
-
         args.advertise_address = advertise_address
 
     if args.chrome_executable_path is None:
@@ -59,6 +59,12 @@ def main():
             'GEPPYTTO_BROWSER_USER_DATA_DIR', None)
         args.user_data_dir = (
             user_data_dir_in_env or '/data/browser_data')
+
+    if args.is_steady is None:
+        is_steady = environ.get('GEPPYTTO_IS_STEADY', None)
+        if is_steady is None:
+            print('Must specify is_steady in cli or env var')
+            raise SystemExit()
 
     while 1:
         pid = fork()

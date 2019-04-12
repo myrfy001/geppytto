@@ -24,6 +24,7 @@ from geppytto.settings import (
     BROWSER_PER_AGENT,
     AGENT_CHECK_OUT_OF_CONTROL_BROWSER_INTERVAL,
     AGENT_CHECK_FREE_BROWSER_MISMATCH_INTERVAL)
+from geppytto.utils import parse_bool
 from .browser_pool import BrowserPool
 from .api.agent_server import start_server
 
@@ -47,7 +48,7 @@ async def agent_main(args):
         ASV.node_name = args.node_name
         ASV.advertise_address = args.advertise_address
         ASV.browser_pool = BrowserPool()
-
+        ASV.is_steady = parse_bool(args.is_steady)
         start_server()
 
         await bind_self_to_agent_slot()
@@ -63,21 +64,12 @@ async def agent_main(args):
 async def bind_self_to_agent_slot():
     while ASV.running:
 
-        await ASV.api_client.register_node(ASV.node_name)
-        node_info = await ASV.api_client.get_node_info(name=ASV.node_name)
-        if node_info['code'] != 200:
-            raise Exception("can't get node info")
-        node_info = node_info['data']
-        ASV.is_node_steady = node_info['is_steady']
-        ASV.node_id = node_info['id']
-
-        # for a new launched node, must update is's last seen time
-        await ASV.api_client.agent_health_report(None, ASV.node_id)
         free_agent_slot = await (
-            ASV.api_client.get_free_agent_slot(ASV.node_id))
+            ASV.api_client.bind_to_free_slot(
+                ASV.advertise_address, ASV.is_steady))
         agent_info = free_agent_slot['data']
         if agent_info is None:
-            logger.info('No free agent slot on this node')
+            logger.info('No free agent slot ...')
             await asyncio.sleep(6)
             continue
 
@@ -85,11 +77,6 @@ async def bind_self_to_agent_slot():
         ASV.agent_name = agent_info['name']
         ASV.user_id = agent_info['user_id']
         ASV.last_ack_time = agent_info['last_ack_time']
-
-        ret = await ASV.api_client.update_agent_advertise_address(
-            ASV.agent_id, ASV.advertise_address)
-        if ret['data'] is not True:
-            continue
 
         logger.info(
             'Successfully bounded to agent slot:' + json.dumps(agent_info))
@@ -124,12 +111,11 @@ async def teardown_process():
     logger.info('Tearing down...')
     ASV.server_task.cancel()
     await ASV.api_client.delete_browser_agent_map(agent_id=ASV.agent_id)
-    print('is_node_steady', ASV.is_node_steady)
-    if not ASV.is_node_steady:
+    print('is_steady', ASV.is_steady)
+    if not ASV.is_steady:
         ret = await ASV.api_client.remove_agent(
             agent_id=ASV.agent_id,
             user_id=ASV.user_id,
-            node_id=ASV.node_id,
             is_steady=False)
         print(ret)
 

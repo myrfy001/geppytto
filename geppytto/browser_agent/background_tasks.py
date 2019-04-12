@@ -38,7 +38,7 @@ class BgtCheckAndUpdateLastTime(BackgroundTaskBase):
         for retry in range(3):
             try:
                 ret = await ASV.api_client.agent_health_report(
-                    ASV.agent_id, ASV.node_id)
+                    ASV.agent_id)
                 data = ret['data']
                 if data['agent_update'] != 1:
                     await asyncio.sleep(1)
@@ -68,7 +68,7 @@ class BgtCheckAgentIdelOrRemove(BackgroundTaskBase):
             logger.info(f'Exit because agent removed, agent:{ASV.agent_id}')
             return
 
-        if ASV.is_node_steady:
+        if ASV.is_steady:
             return
 
         if not ASV.browser_pool.is_idle():

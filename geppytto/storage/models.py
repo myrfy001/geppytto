@@ -4,16 +4,11 @@ from aiomysql.cursors import DictCursor
 
 
 class LimitRulesTypeEnum:
-    AGENT_ON_NODE = 'AGENT_ON_NODE'
     STEADY_AGENT_ON_USER = 'STEADY_AGENT_ON_USER'
     DYNAMIC_AGENT_ON_USER = 'DYNAMIC_AGENT_ON_USER'
 
 
 class BaseModel(dict):
-    pass
-
-
-class NodeModel(BaseModel):
     pass
 
 

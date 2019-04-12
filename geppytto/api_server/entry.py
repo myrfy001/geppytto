@@ -48,6 +48,7 @@ async def connect_to_mysql(args):
 async def api_server_main(args):
 
     ASSV.user_info_cache_by_access_token = TTLRU(size=8192, ttl=int(30e9))
+    ASSV.user_info_cache_by_agent_id = TTLRU(size=8192, ttl=int(30e9))
     await connect_to_mysql(args)
 
     start_background_task()
