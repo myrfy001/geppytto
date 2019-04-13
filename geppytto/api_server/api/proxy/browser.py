@@ -66,9 +66,8 @@ async def _browser_websocket_connection_handler(
             logger.info(f'No Alive Agent user:{user_info["id"]}')
             busy_event = BusyEventModel(
                 user_id=user_id,
-                agent_id=0
-            )
-            ret = await ASSV.mysql_conn.add_busy_event(busy_event)
+                agent_id=0)
+            await ASSV.mysql_conn.add_busy_event(busy_event)
         return
 
 

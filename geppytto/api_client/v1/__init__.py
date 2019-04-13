@@ -12,8 +12,8 @@ class GeppyttoApiClient:
         self._url_get_agent_info = urljoin(server_base_url, './agent')
         self._url_bind_to_free_slot = urljoin(
             server_base_url, './agent/bind_to_free_slot')
-        self._url_agent_health_report = urljoin(
-            server_base_url, './agent/agent_health_report')
+        self._url_agent_heartbeat = urljoin(
+            server_base_url, './agent/agent_heartbeat')
         self._url_remove_agent = urljoin(
             server_base_url, './agent/remove_agent')
         self._url_add_browser_agent_map = urljoin(
@@ -24,6 +24,10 @@ class GeppyttoApiClient:
             server_base_url, './busy_event/add_busy_event')
 
         self.session = ClientSession()
+        self._access_token = ''
+
+    def set_access_token(self, token):
+        self._access_token = token
 
     async def close(self):
         await self.session.close()
@@ -39,21 +43,26 @@ class GeppyttoApiClient:
             return await resp.json()
 
     async def bind_to_free_slot(
-            self, advertise_address: str, is_steady: bool):
+            self, advertise_address: str, is_steady: bool, bind_token: str):
         async with self.session.post(
             self._url_bind_to_free_slot,
             json={'advertise_address': advertise_address,
-                  'is_steady': is_steady}
+                  'is_steady': is_steady,
+                  'bind_token': bind_token,
+                  }
         ) as resp:
             return await resp.json()
 
-    async def agent_health_report(self, agent_id: str):
+    async def agent_heartbeat(self, agent_id: str, last_ack_time: int):
         params = {}
         if agent_id is not None:
             params['agent_id'] = agent_id
+            params['last_ack_time'] = last_ack_time
 
         async with self.session.get(
-                self._url_agent_health_report, params=params) as resp:
+                self._url_agent_heartbeat, params=params,
+                headers={'X-GEPPYTTO-ACCESS-TOKEN': self._access_token}
+        ) as resp:
             return await resp.json()
 
     async def remove_agent(
@@ -64,7 +73,9 @@ class GeppyttoApiClient:
             'is_steady': is_steady
         }
         async with self.session.delete(
-                self._url_remove_agent, json=data) as resp:
+                self._url_remove_agent, json=data,
+                headers={'X-GEPPYTTO-ACCESS-TOKEN': self._access_token}
+        ) as resp:
             return await resp.json()
 
     async def delete_browser_agent_map(
@@ -76,7 +87,9 @@ class GeppyttoApiClient:
         else:
             return None
         async with self.session.delete(
-                self._url_delete_browser_agent_map, params=params) as resp:
+                self._url_delete_browser_agent_map, params=params,
+                headers={'X-GEPPYTTO-ACCESS-TOKEN': self._access_token}
+        ) as resp:
             return await resp.json()
 
     async def add_browser_agent_map(
@@ -86,7 +99,8 @@ class GeppyttoApiClient:
             self._url_add_browser_agent_map, json={
                 'agent_id': agent_id,
                 'user_id': user_id,
-                'bid': bid}
+                'bid': bid},
+                headers={'X-GEPPYTTO-ACCESS-TOKEN': self._access_token}
         ) as resp:
             return await resp.json()
 
@@ -94,5 +108,7 @@ class GeppyttoApiClient:
         async with self.session.post(
             self._url_add_busy_event, json={
                 'agent_id': agent_id,
-                'user_id': user_id}) as resp:
+                'user_id': user_id},
+                headers={'X-GEPPYTTO-ACCESS-TOKEN': self._access_token}
+        ) as resp:
             return await resp.json()

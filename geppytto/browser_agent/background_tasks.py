@@ -15,59 +15,50 @@ from geppytto.utils.background_task_mgr import (
 logger = logging.getLogger()
 
 
-class BgtCheckAndUpdateLastTime(BackgroundTaskBase):
+class BgtCheckAndUpdateAgentStatus(BackgroundTaskBase):
 
     async def run(self):
+        try:
+            await self.do_heart_beat()
+        except Exception:
+            logger.exception('do_heart_beat')
 
+        try:
+            self.check_agent_idel()
+        except Exception:
+            logger.exception('check_agent_idel')
+
+    async def do_heart_beat(self):
         for retry in range(3):
             try:
-                ret = await ASV.api_client.get_agent_info(
-                    id_=ASV.agent_id)
+                ret = await ASV.api_client.agent_heartbeat(
+                    agent_id=ASV.agent_id, last_ack_time=ASV.last_ack_time)
                 if ret['code'] != 200:
                     await asyncio.sleep(1)
                     continue
-                data = ret['data']
-                if ASV.last_ack_time != data['last_ack_time']:
-                    logger.warning('The Agent slot was taken over by another')
-                    ASV.set_soft_exit()
-                    return
+                else:
+                    data = ret['data']
+                    break
 
             except Exception:
                 await asyncio.sleep(1)
-
-        for retry in range(3):
-            try:
-                ret = await ASV.api_client.agent_health_report(
-                    ASV.agent_id)
-                data = ret['data']
-                if data['agent_update'] != 1:
-                    await asyncio.sleep(1)
-                    continue
-                ASV.last_ack_time = data['new_agent_time']
-                logger.debug('agent updated last_ack_time')
-                break
-
-            except Exception:
-                await asyncio.sleep(1)
-
-
-class BgtKillOutOfControlBrowsers(BackgroundTaskBase):
-    async def run(self):
-        await ASV.browser_pool.close_out_of_control_browser()
-        logger.info('kill out of control browser task finished')
-
-
-class BgtCheckAgentIdelOrRemove(BackgroundTaskBase):
-    async def run(self):
-
-        ret = await ASV.api_client.get_agent_info(
-            id_=ASV.agent_id)
-        if ret['code'] == 200 and ret['data'] is None:
-            # No record for this agent, the agent has been removed
+        else:
             ASV.set_soft_exit()
-            logger.info(f'Exit because agent removed, agent:{ASV.agent_id}')
+            logger.info(
+                f'Exit because net err to api server, agent:{ASV.agent_id}')
             return
 
+        if data['new_ack_time'] == 0:
+            # No record for this agent, the agent has been removed
+            ASV.set_soft_exit()
+            logger.info(
+                f'Exit because agent removed or took by another, '
+                f'agent:{ASV.agent_id}')
+            return
+        else:
+            ASV.last_ack_time = data['new_ack_time']
+
+    def check_agent_idel(self):
         if ASV.is_steady:
             return
 
@@ -82,8 +73,23 @@ class BgtCheckAgentIdelOrRemove(BackgroundTaskBase):
         logger.info(f'Exit because agent idle, agent:{ASV.agent_id}')
 
 
-class BgtDeleteCoreDumpFile(BackgroundTaskBase):
+class BgtCleaningTasks(BackgroundTaskBase):
     async def run(self):
+        try:
+            await self.kill_out_of_control_browsers()
+        except Exception:
+            logger.exception('kill_out_of_control_browsers')
+
+        try:
+            self.delete_core_dump_files()
+        except Exception:
+            logger.exception('delete_core_dump_files')
+
+    async def kill_out_of_control_browsers(self):
+        await ASV.browser_pool.close_out_of_control_browser()
+        logger.info('kill out of control browser task finished')
+
+    def delete_core_dump_files(self):
         for fn in glob.glob('./core.*'):
             logger.info(f'Remove core dump file:{fn}')
             os.remove(fn)

@@ -4,7 +4,7 @@ from sanic.blueprints import Blueprint
 from sanic.exceptions import ServerError
 
 from .agent import (
-    get_agent_info, bind_to_free_slot, agent_health_report,
+    get_agent_info, bind_to_free_slot, agent_heartbeat,
     remove_agent)
 from .browser_agent_map import (
     add_browser_agent_map, delete_browser_agent_map)
@@ -33,8 +33,8 @@ def external_bp_exception_handler(request, exception):
 internal_bp.add_route(get_agent_info, '/agent')
 internal_bp.add_route(bind_to_free_slot, '/agent/bind_to_free_slot',
                       methods=('POST',))
-internal_bp.add_route(agent_health_report,
-                      '/agent/agent_health_report')
+internal_bp.add_route(agent_heartbeat,
+                      '/agent/agent_heartbeat')
 internal_bp.add_route(remove_agent,
                       '/agent/remove_agent',
                       methods=('DELETE',))

@@ -24,10 +24,13 @@ logger = logging.getLogger()
 
 
 class MySQLQueryResult:
-    __slots__ = ('value', 'lastrowid', 'error', 'msg')
+    __slots__ = ('value', 'affected_rows', 'lastrowid', 'error', 'msg')
 
-    def __init__(self, value=None, lastrowid=None, error=None, msg=None):
+    def __init__(self,
+                 value=None, affected_rows=None, lastrowid=None, error=None,
+                 msg=None):
         self.value = value
+        self.affected_rows = affected_rows
         self.lastrowid = lastrowid
         self.error = error
         self.msg = msg
@@ -41,8 +44,7 @@ class AgentMixIn:
         threshold = int(time.time() - AGENT_NO_ACTIVATE_THRESHOLD) * 1000
         async with self.pool.acquire() as conn:
             await conn.begin()
-            sql = '''select id, name, user_id, last_ack_time from agent where last_ack_time < %(threshold)s and is_steady=%(is_steady)s
-               order by last_ack_time limit 1 for update'''
+            sql = '''SELECT t1.id AS id, t1.name AS name, user_id, last_ack_time, access_token FROM agent t1 LEFT JOIN `user` t2 ON t1.user_id=t2.id WHERE last_ack_time<%(threshold)s AND is_steady=%(is_steady)s ORDER BY last_ack_time LIMIT 1 FOR UPDATE'''
             ret = await self._execute_fetch_one(
                 sql,
                 args={'threshold': threshold, 'is_steady': is_steady},
@@ -69,11 +71,16 @@ class AgentMixIn:
                 agent_info.value['last_ack_time'] = new_ack_time
                 return agent_info
 
-    async def update_agent_last_ack_time(self, agent_id: str):
-        sql = ('update agent set last_ack_time = %s where id = %s')
-        ti = int(time.time()*1000)
-        ret = await self._execute(sql, (ti, agent_id))
-        ret.value = ti
+    async def update_agent_last_ack_time(
+            self, agent_id: str, last_ack_time: int, new_ack_time: int):
+        sql = (
+            'update agent set last_ack_time=%(new_ack_time)s '
+            'where id=%(id)s and last_ack_time=%(last_ack_time)s')
+        ret = await self._execute(
+            sql,
+            {'id': agent_id,
+             'new_ack_time': new_ack_time,
+             'last_ack_time': last_ack_time})
         return ret
 
     async def get_agent_info(self, id_=None, name=None):
@@ -317,8 +324,8 @@ class MultiTableOperationMixIn:
             self, name: str, user_id: int, is_steady: bool):
 
         sql_update_rule = 'update view_limit_rule_write_checker set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s'
-        sql_insert_agent = 'insert into agent (name, user_id, last_ack_time) values (%(name)s, %(user_id)s, 0)'
-        args = {'name': name, 'user_id': user_id}
+        sql_insert_agent = 'insert into agent (name, user_id, is_steady, last_ack_time) values (%(name)s, %(user_id)s, %(is_steady)s, 0)'
+        args = {'name': name, 'user_id': user_id, 'is_steady': is_steady}
         if is_steady:
             args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
         else:
@@ -409,55 +416,63 @@ class MysqlStorageAccessor(
 
     async def _execute(self, sql, args, cursor_class=aiomysql.DictCursor,
                        conn: Connection = None):
+        affected_rows = 0
         conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
             async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(cursor_class)
-                await cursor.execute(sql, args)
+                affected_rows = await cursor.execute(sql, args)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, error=e)
-        return MySQLQueryResult(lastrowid=cursor.lastrowid)
+            return MySQLQueryResult(None, affected_rows=affected_rows, error=e)
+        return MySQLQueryResult(affected_rows=affected_rows,
+                                lastrowid=cursor.lastrowid)
 
     async def _execute_fetch_one(
             self, sql, args, cursor_class=aiomysql.DictCursor,
             conn: Connection = None):
+        affected_rows = 0
         conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
             async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(cursor_class)
-                await cursor.execute(sql, args)
+                affected_rows = await cursor.execute(sql, args)
                 return MySQLQueryResult(
-                    await cursor.fetchone(), lastrowid=cursor.lastrowid)
+                    await cursor.fetchone(), affected_rows=affected_rows,
+                    lastrowid=cursor.lastrowid)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, error=e)
+            return MySQLQueryResult(None, affected_rows=affected_rows, error=e)
 
     async def _execute_fetch_all(
             self, sql, args, cursor_class=aiomysql.DictCursor,
             conn: Connection = None):
+        affected_rows = 0
         conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
             async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(cursor_class)
-                await cursor.execute(sql, args)
+                affected_rows = await cursor.execute(sql, args)
                 return MySQLQueryResult(
-                    await cursor.fetchall(), lastrowid=cursor.lastrowid)
+                    await cursor.fetchall(), affected_rows=affected_rows,
+                    lastrowid=cursor.lastrowid)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, error=e)
+            return MySQLQueryResult(None, affected_rows=affected_rows, error=e)
 
     async def _execute_last_recordset_fetchone(self, sql, args,
                                                conn: Connection = None):
+        affected_rows = 0
         conn_maker = _ExistConnectionWrapper(conn) if conn else self.pool
         try:
             async with conn_maker.acquire() as conn:
                 cursor = await conn.cursor(aiomysql.DictCursor)
-                await cursor.execute(sql, args)
+                affected_rows = await cursor.execute(sql, args)
                 while await cursor.nextset():
                     pass
                 return MySQLQueryResult(
-                    await cursor.fetchone(), lastrowid=cursor.lastrowid)
+                    await cursor.fetchone(), affected_rows=affected_rows,
+                    lastrowid=cursor.lastrowid)
         except Exception as e:
             logger.exception('Mysql Access Error')
-            return MySQLQueryResult(None, error=e)
+            return MySQLQueryResult(None, affected_rows=affected_rows, error=e)

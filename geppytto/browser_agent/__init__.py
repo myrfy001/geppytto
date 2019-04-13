@@ -34,6 +34,8 @@ class AgentSharedVars:
 
     server_task = None
 
+    access_token = None
+
     @classmethod
     def set_soft_exit(cls):
         cls.soft_exit = True

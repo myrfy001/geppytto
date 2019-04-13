@@ -8,7 +8,7 @@ from geppytto.api_server import ApiServerSharedVars as ASSV
 from geppytto.api_server.api.utils import get_ok_response, get_err_response
 from geppytto.storage.models import (
     UserModel, LimitRulesModel, LimitRulesTypeEnum)
-from geppytto.settings import SECRET_TOKEN
+from geppytto.settings import PASSWORD_SECRET_TOKEN
 
 
 async def add_user(req):
@@ -24,7 +24,7 @@ async def add_user(req):
     user = UserModel(
         name=name,
         password=b64encode(
-            sha256((SECRET_TOKEN+password).encode('utf-8')).digest()),
+            sha256((PASSWORD_SECRET_TOKEN+password).encode('utf-8')).digest()),
         access_token=token_urlsafe(32)
     )
     ret = await ASSV.mysql_conn.add_user(user)
