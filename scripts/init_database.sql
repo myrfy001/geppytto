@@ -5,6 +5,7 @@ CREATE TABLE `agent` (
   `advertise_address` char(255) NOT NULL DEFAULT '',
   `user_id` bigint(11) NOT NULL,
   `is_steady` tinyint(1) NOT NULL,
+  `busy_level` smallint(5) NOT NULL,
   `last_ack_time` bigint(15) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),

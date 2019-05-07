@@ -14,7 +14,8 @@ from cryptography import fernet
 
 from pyppeteer.launcher import executablePath
 
-from geppytto.api_client.v1 import GeppyttoApiClient
+from geppytto.api_client.v1 import (
+    GeppyttoApiClient, GeppyttoApiSingleNodeDummyClient)
 from geppytto.browser_agent import AgentSharedVars as ASV
 from geppytto.browser_agent.background_tasks import (
     BackgroundTaskManager, BgtCheckAndUpdateAgentStatus,
@@ -42,7 +43,12 @@ async def agent_main(args):
         ASV.soft_exit = False
         ASV.chrome_executable_path = args.chrome_executable_path
         ASV.user_data_dir = args.user_data_dir
-        api_client = GeppyttoApiClient(args.api_server)
+        if args.api_server:
+            api_client = GeppyttoApiClient(args.api_server)
+            ASV.is_cluster_mode = True
+        else:
+            api_client = GeppyttoApiSingleNodeDummyClient(args.access_token)
+            ASV.is_cluster_mode = False
         ASV.api_client = api_client
         ASV.host = args.host
         ASV.port = args.port

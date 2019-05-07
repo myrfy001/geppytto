@@ -1,0 +1,27 @@
+version: '3.3'
+services:
+
+  kong:
+    image: kong-geppytto
+    dns: 8.8.8.8
+    deploy:
+      replicas: 1
+    environment:
+      - KONG_DATABASE=off
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001, 0.0.0.0:8444 ssl
+      - KONG_PLUGINS=bundled,geppytto_dynamic_router
+      - KONG_DECLARATIVE_CONFIG=dbless_kong.yml
+    ports:
+      - 11000:8000
+      - 11443:8443
+      - 11001:8001
+      - 11444:8444
+    networks:
+      - geppytto_net
+
+
+
+networks:
+  geppytto_net:
+    external: true
+    driver: overlay

@@ -1,0 +1,16 @@
+_format_version: "1.1"
+
+services:
+- name: my-service
+  # url must have a http protocol, because geppytto_dynamic_router plugin will
+  # use set_target, set_target will only change host and port, but don't change
+  # the protocol type
+  url: http://example.com/
+  plugins:
+    - name: geppytto_dynamic_router
+      config:
+        dynamic_route_service_url: http://geppytto-api:9990/api/internal/v1/dynamic_router/get_agent_url_by_token
+  routes:
+  - name: my-route
+    paths:
+    - /

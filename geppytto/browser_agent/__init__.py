@@ -36,6 +36,8 @@ class AgentSharedVars:
 
     access_token = None
 
+    is_cluster_mode = False
+
     @classmethod
     def set_soft_exit(cls):
         cls.soft_exit = True

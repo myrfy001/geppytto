@@ -27,10 +27,10 @@ def main():
         description='Geppytto browser agent')
     parser.add_argument('--host', type=str, default='0.0.0.0')
     parser.add_argument('--port', type=int, default=9991)
-    parser.add_argument('--api_server', type=str,
-                        default='http://localhost:9990')
+    parser.add_argument('--api_server', type=str, default=None)
+    parser.add_argument('--access_token', type=str, default=None)
     parser.add_argument('--node_name', type=str)
-    parser.add_argument('--is_steady', type=bool)
+    parser.add_argument('--is_steady', type=bool, default=None)
     parser.add_argument('--advertise_address', type=str)
     parser.add_argument('--chrome-executable-path', type=str, default=None)
     parser.add_argument('--user-data-dir', type=str, default=None)
@@ -60,11 +60,17 @@ def main():
         args.user_data_dir = (
             user_data_dir_in_env or '/data/browser_data')
 
+    if args.access_token is None:
+        args.access_token = environ.get(
+            'GEPPYTTO_ACCESS_TOKEN', None)
+
     if args.is_steady is None:
         is_steady = environ.get('GEPPYTTO_IS_STEADY', None)
-        if is_steady is None:
+        if is_steady is None and args.api_server is not None:
             print('Must specify is_steady in cli or env var')
             raise SystemExit()
+        else:
+            is_steady = True  # in single node mode, must be steady
 
     while 1:
         pid = fork()

@@ -18,6 +18,9 @@ logger = logging.getLogger()
 class BgtCheckAndUpdateAgentStatus(BackgroundTaskBase):
 
     async def run(self):
+        if not ASV.is_cluster_mode:
+            return
+
         try:
             await self.do_heart_beat()
         except Exception:
@@ -29,10 +32,12 @@ class BgtCheckAndUpdateAgentStatus(BackgroundTaskBase):
             logger.exception('check_agent_idel')
 
     async def do_heart_beat(self):
+        busy_level = int(ASV.browser_pool.get_busy_level() * 100)
         for retry in range(3):
             try:
                 ret = await ASV.api_client.agent_heartbeat(
-                    agent_id=ASV.agent_id, last_ack_time=ASV.last_ack_time)
+                    agent_id=ASV.agent_id, last_ack_time=ASV.last_ack_time,
+                    busy_level=busy_level)
                 if ret['code'] != 200:
                     await asyncio.sleep(1)
                     continue

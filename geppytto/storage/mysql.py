@@ -72,15 +72,18 @@ class AgentMixIn:
                 return agent_info
 
     async def update_agent_last_ack_time(
-            self, agent_id: str, last_ack_time: int, new_ack_time: int):
+            self, agent_id: str, last_ack_time: int, new_ack_time: int,
+            busy_level: int):
         sql = (
-            'update agent set last_ack_time=%(new_ack_time)s '
+            'update agent set last_ack_time=%(new_ack_time)s, '
+            'busy_level=%(busy_level)s'
             'where id=%(id)s and last_ack_time=%(last_ack_time)s')
         ret = await self._execute(
             sql,
             {'id': agent_id,
              'new_ack_time': new_ack_time,
-             'last_ack_time': last_ack_time})
+             'last_ack_time': last_ack_time,
+             'busy_level': busy_level})
         return ret
 
     async def get_agent_info(self, id_=None, name=None):
@@ -324,7 +327,7 @@ class MultiTableOperationMixIn:
             self, name: str, user_id: int, is_steady: bool):
 
         sql_update_rule = 'update view_limit_rule_write_checker set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s'
-        sql_insert_agent = 'insert into agent (name, user_id, is_steady, last_ack_time) values (%(name)s, %(user_id)s, %(is_steady)s, 0)'
+        sql_insert_agent = 'insert into agent (name, user_id, is_steady, busy_level, last_ack_time) values (%(name)s, %(user_id)s, %(is_steady)s, 0, 0)'
         args = {'name': name, 'user_id': user_id, 'is_steady': is_steady}
         if is_steady:
             args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
@@ -333,7 +336,7 @@ class MultiTableOperationMixIn:
 
         async with self.pool.acquire() as conn:
             await conn.begin()
-            ret = await self._execute(sql_update_rule, args)
+            ret = await self._execute(sql_update_rule, args, conn=conn)
             if ret.error is not None:
                 await conn.rollback()
                 return ret
@@ -342,7 +345,6 @@ class MultiTableOperationMixIn:
             if ret.error is not None:
                 await conn.rollback()
                 return ret
-
             await conn.commit()
             return ret
 
@@ -361,7 +363,7 @@ class MultiTableOperationMixIn:
         sql_update_rule = 'update view_limit_rule_write_checker set current=current-1 {request_modify_clause} where owner_id=%(user_id)s and `type`=%(type_user)s'
         async with self.pool.acquire() as conn:
             await conn.begin()
-            ret = await self._execute(sql_delete_agent, args)
+            ret = await self._execute(sql_delete_agent, args, conn=conn)
             if ret.error is not None:
                 await conn.rollback()
                 return ret

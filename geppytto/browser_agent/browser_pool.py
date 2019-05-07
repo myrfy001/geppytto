@@ -97,6 +97,9 @@ class BrowserPool:
     def is_idle(self):
         return not bool(self.busy_browsers)
 
+    def get_busy_level(self):
+        return max(min(len(self.busy_browsers) / BROWSER_PER_AGENT, 1), 0)
+
     async def get_browser(
             self, bid: str, launch_options: dict, no_wait: bool = False):
 

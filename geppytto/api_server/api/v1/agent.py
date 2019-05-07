@@ -41,6 +41,7 @@ async def bind_to_free_slot(req):
 async def agent_heartbeat(req):
     agent_id = req.raw_args.get('agent_id')
     last_ack_time = req.raw_args.get('last_ack_time')
+    busy_level = req.raw_args.get('busy_level')
     new_ack_time = int(time.time()*1000)
 
     if await check_agent_id_auth_by_req(req, agent_id) is False:
@@ -49,7 +50,7 @@ async def agent_heartbeat(req):
     ret_data = {'new_ack_time': 0}
     if agent_id is not None:
         ret = await ASSV.mysql_conn.update_agent_last_ack_time(
-            agent_id, last_ack_time, new_ack_time)
+            agent_id, last_ack_time, new_ack_time, busy_level)
         if ret.error is None and ret.affected_rows == 1:
             ret_data['new_ack_time'] = new_ack_time
 

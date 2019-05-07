@@ -12,6 +12,7 @@ from .named_browser import (add_named_browser)
 from .user import add_user
 from .limit_rule import upsert_limit
 from .busy_event import add_busy_event
+from .dynamic_router import get_agent_url_by_token
 
 from ..utils import get_err_response
 
@@ -48,6 +49,9 @@ internal_bp.add_route(delete_browser_agent_map,
 
 internal_bp.add_route(add_busy_event, '/busy_event/add_busy_event',
                       methods=('POST',))
+
+internal_bp.add_route(get_agent_url_by_token,
+                      '/dynamic_router/get_agent_url_by_token')
 
 
 external_bp.add_route(add_named_browser, '/named_browser/add_named_browser',

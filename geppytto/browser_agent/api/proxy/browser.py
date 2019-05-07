@@ -120,8 +120,6 @@ async def _browser_websocket_connection_handler(
         browser_ws = await asyncio.wait_for(
             websockets.connect(browser.browser_debug_url), timeout=2)
 
-        await client_ws.send('OK')
-
         proxy_worker = WebsocketProxyWorker(
             '', client_ws, browser_ws, None)
         await proxy_worker.run()

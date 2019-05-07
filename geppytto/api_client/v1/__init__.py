@@ -53,11 +53,13 @@ class GeppyttoApiClient:
         ) as resp:
             return await resp.json()
 
-    async def agent_heartbeat(self, agent_id: str, last_ack_time: int):
+    async def agent_heartbeat(self, agent_id: str, last_ack_time: int,
+                              busy_level: int):
         params = {}
         if agent_id is not None:
             params['agent_id'] = agent_id
             params['last_ack_time'] = last_ack_time
+            params['busy_level'] = busy_level
 
         async with self.session.get(
                 self._url_agent_heartbeat, params=params,
@@ -112,3 +114,47 @@ class GeppyttoApiClient:
                 headers={'X-GEPPYTTO-ACCESS-TOKEN': self._access_token}
         ) as resp:
             return await resp.json()
+
+
+class GeppyttoApiSingleNodeDummyClient:
+    def __init__(self, access_token: str):
+        self.access_token = access_token
+
+    def set_access_token(self, token):
+        pass
+
+    async def close(self):
+        pass
+
+    async def get_agent_info(self, id_: str = None, name: str = None):
+        pass
+
+    async def bind_to_free_slot(
+            self, advertise_address: str, is_steady: bool, bind_token: str):
+
+        return {
+            'data': {
+                'id': 'single_node',
+                'name': 'single_node',
+                'user_id': 'single_node',
+                'last_ack_time': 0,
+                'access_token': self.access_token
+            }
+        }
+
+    async def agent_heartbeat(self, agent_id: str, last_ack_time: int,
+                              busy_level: int):
+        pass
+
+    async def remove_agent(
+            self, agent_id: int, user_id: int, is_steady: bool):
+        pass
+
+    async def delete_browser_agent_map(
+            self, user_id: int = None, bid: str = None, agent_id: int = None):
+        pass
+
+    async def add_browser_agent_map(
+            self, user_id: int, bid: str, agent_id: int):
+
+        pass
