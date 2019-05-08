@@ -6,11 +6,13 @@ from base64 import b64encode
 import logging
 import random
 import time
+import uuid
+import asyncio
 
 from geppytto.api_server import ApiServerSharedVars as ASSV
 from geppytto.api_server.api.utils import get_ok_response, get_err_response
 from geppytto.storage.models import BrowserAgentMapModel, BusyEventModel
-from geppytto.settings import PASSWORD_SECRET_TOKEN
+from geppytto.settings import PASSWORD_SECRET_TOKEN, AGENT_BIND_CHECK_INTERVAL
 from geppytto.api_server.common.auth_check import (
     get_access_token_from_req, get_user_info_by_access_token)
 
@@ -32,7 +34,7 @@ async def get_agent_url_by_token(req):
     bid = req.raw_args.get('bid', None)
     browser_name = req.raw_args.get('browser_name', None)
 
-    agent = await get_agent_for_user(user_id, bid, browser_name)
+    agent = await get_agent_for_user(user_id, bid)
 
     if agent is None:
 
@@ -56,8 +58,8 @@ async def get_agent_url_by_token(req):
     return get_ok_response({'host': host, 'port': int(port)})
 
 
-async def get_agent_for_user(user_id: int, bid: str, browser_name: str = None):
-    if browser_name is None:
+async def get_agent_for_user(user_id: int, bid: str):
+    for retry in range(2):
 
         # first we check if there is map for that bid
         ret = await ASSV.mysql_conn.get_agent_id_by_browser_id(user_id, bid)
@@ -75,9 +77,6 @@ async def get_agent_for_user(user_id: int, bid: str, browser_name: str = None):
             logger.error('get_alive_agent_for_user error')
             return None
 
-        if not ret.value:
-            return None
-
         selected_agents = [x for x in ret.value
                            if x['is_steady'] == 1 and x['busy_level'] < 99]
         if not selected_agents:
@@ -85,9 +84,19 @@ async def get_agent_for_user(user_id: int, bid: str, browser_name: str = None):
                                if x['is_steady'] == 0 and x['busy_level'] < 99]
 
         if not selected_agents:
-            return None
+            ret = await ASSV.mysql_conn.add_agent(
+                name='agent_'+str(uuid.uuid4()),
+                user_id=user_id, is_steady=True)
+            if ret.error is not None:
+                await ASSV.mysql_conn.add_agent(
+                    name='agent_'+str(uuid.uuid4()),
+                    user_id=user_id, is_steady=False)
+            await asyncio.sleep(int(AGENT_BIND_CHECK_INTERVAL/2))
+            continue
 
         agent = random.choice(selected_agents)
+        logger.info(
+            f'dynamic_upstream finally selected agents: {agent}')
 
         # Register the map
         bam = BrowserAgentMapModel(
@@ -103,13 +112,3 @@ async def get_agent_for_user(user_id: int, bid: str, browser_name: str = None):
             return None
 
         return agent
-
-    else:
-        named_browser = await ASSV.mysql_conn.get_named_browser(
-            user_id, browser_name)
-        if named_browser.value is None:
-            return None
-
-        agent = await ASSV.mysql_conn.get_agent_info(
-            id_=named_browser.value['agent_id'])
-        return agent.value

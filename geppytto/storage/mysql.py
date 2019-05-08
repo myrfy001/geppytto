@@ -326,7 +326,7 @@ class MultiTableOperationMixIn:
     async def add_agent(
             self, name: str, user_id: int, is_steady: bool):
 
-        sql_update_rule = 'update view_limit_rule_write_checker set current=current+1 where owner_id=%(user_id)s and `type`=%(type_user)s'
+        sql_update_rule = 'update view_limit_rule_write_checker set current=current+1, request=request+1 where owner_id=%(user_id)s and `type`=%(type_user)s'
         sql_insert_agent = 'insert into agent (name, user_id, is_steady, busy_level, last_ack_time) values (%(name)s, %(user_id)s, %(is_steady)s, 0, 0)'
         args = {'name': name, 'user_id': user_id, 'is_steady': is_steady}
         if is_steady:
@@ -353,14 +353,12 @@ class MultiTableOperationMixIn:
 
         args = {'agent_id': agent_id, 'user_id': user_id}
         if is_steady:
-            request_modify_clause = ''
             args['type_user'] = LimitRulesTypeEnum.STEADY_AGENT_ON_USER
         else:
-            request_modify_clause = ',request=request-1'
             args['type_user'] = LimitRulesTypeEnum.DYNAMIC_AGENT_ON_USER
 
         sql_delete_agent = 'delete from agent where id=%(agent_id)s'
-        sql_update_rule = 'update view_limit_rule_write_checker set current=current-1 {request_modify_clause} where owner_id=%(user_id)s and `type`=%(type_user)s'
+        sql_update_rule = 'update view_limit_rule_write_checker set current=current-1, request=request-1 where owner_id=%(user_id)s and `type`=%(type_user)s'
         async with self.pool.acquire() as conn:
             await conn.begin()
             ret = await self._execute(sql_delete_agent, args, conn=conn)

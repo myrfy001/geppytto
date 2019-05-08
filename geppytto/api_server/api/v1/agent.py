@@ -1,11 +1,15 @@
 # coding:utf-8
 
 import time
+import logging
 
 from geppytto.api_server import ApiServerSharedVars as ASSV
 from geppytto.api_server.api.utils import get_ok_response, get_err_response
 from geppytto.api_server.common.auth_check import (
     check_user_id_auth_by_req, check_bind_token, check_agent_id_auth_by_req)
+
+
+logger = logging.getLogger()
 
 
 async def get_agent_info(req):
@@ -24,9 +28,11 @@ async def bind_to_free_slot(req):
     bind_token = req.json.get('bind_token')
 
     if (advertise_address is None or is_steady is None or bind_token is None):
+        logger.error('bind_to_free_slot missing param')
         return get_err_response(None, msg='param error')
 
     if check_bind_token(bind_token) is False:
+        logger.error(f'bind_to_free_slot check_bind_token error')
         return get_err_response(None, msg='param error')
 
     bind_ret = await ASSV.mysql_conn.bind_to_free_slot(

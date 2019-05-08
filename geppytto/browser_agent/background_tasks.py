@@ -64,8 +64,6 @@ class BgtCheckAndUpdateAgentStatus(BackgroundTaskBase):
             ASV.last_ack_time = data['new_ack_time']
 
     def check_agent_idel(self):
-        if ASV.is_steady:
-            return
 
         if not ASV.browser_pool.is_idle():
             return

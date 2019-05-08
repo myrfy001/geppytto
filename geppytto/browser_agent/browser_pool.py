@@ -120,6 +120,7 @@ class BrowserPool:
         try:
             await browser.run(launch_options)
         except Exception:
+            logger.exception('Launch New Browser Error')
             self.get_browser_sem.release()
             return None
 

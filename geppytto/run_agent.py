@@ -17,7 +17,7 @@ from pyppeteer.launcher import executablePath
 
 sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
-from geppytto.utils import get_ip  # noqa
+from geppytto.utils import get_ip, parse_bool  # noqa
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
     parser.add_argument('--api_server', type=str, default=None)
     parser.add_argument('--access_token', type=str, default=None)
     parser.add_argument('--node_name', type=str)
-    parser.add_argument('--is_steady', type=bool, default=None)
+    parser.add_argument('--is_steady', type=parse_bool, default=None)
     parser.add_argument('--advertise_address', type=str)
     parser.add_argument('--chrome-executable-path', type=str, default=None)
     parser.add_argument('--user-data-dir', type=str, default=None)
@@ -70,7 +70,7 @@ def main():
             print('Must specify is_steady in cli or env var')
             raise SystemExit()
         else:
-            is_steady = True  # in single node mode, must be steady
+            args.is_steady = True  # in single node mode, must be steady
 
     while 1:
         pid = fork()

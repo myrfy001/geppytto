@@ -59,9 +59,16 @@ def create_simple_dataclass_from_dict(
 
 
 def parse_bool(s):
+    if s is True:
+        return True
+
     b = bool(s)
     if b is False:
         return False
-    if str(s).lower() in ('false', '0', 'f'):
+
+    if s.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif s.lower() in ('no', 'false', 'f', 'n', '0'):
         return False
-    return True
+    else:
+        raise Exception('Boolean value expected.')

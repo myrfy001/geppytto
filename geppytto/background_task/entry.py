@@ -12,11 +12,6 @@ from geppytto.storage.mysql import MysqlStorageAccessor
 from geppytto.utils.background_task_mgr import (
     BackgroundTaskBase, BackgroundTaskManager)
 
-from geppytto.background_task.tasks.dynamic_agent import (
-    BgtCheckBusyEventAndChangeDynamicAgentRequest)
-
-from geppytto.background_task.tasks.agent_adjuster import (
-    BgtCheckAgentMismatchAndAdjust)
 
 from ttlru import TTLRU
 
@@ -52,17 +47,3 @@ async def background_task_main(args):
 def start_background_task():
     if BTSV.bgt_manager is None:
         BTSV.bgt_manager = BackgroundTaskManager()
-
-    check_busy_event_and_change_dynamic_agent_request_task = (
-        BgtCheckBusyEventAndChangeDynamicAgentRequest())
-
-    check_agent_mismatch_and_adjust_task = (
-        BgtCheckAgentMismatchAndAdjust())
-
-    BTSV.bgt_manager.launch_bg_task(
-        check_busy_event_and_change_dynamic_agent_request_task,
-        API_SERVER_CHECK_BUSY_EVENT_TIME)
-
-    BTSV.bgt_manager.launch_bg_task(
-        check_agent_mismatch_and_adjust_task,
-        API_SERVER_CHECK_BUSY_EVENT_TIME)

@@ -25,8 +25,8 @@ from geppytto.settings import (
     BROWSER_PER_AGENT,
     AGENT_CHECK_OUT_OF_CONTROL_BROWSER_INTERVAL,
     AGENT_CHECK_FREE_BROWSER_MISMATCH_INTERVAL,
-    AGENT_BIND_SECRET_TOKEN)
-from geppytto.utils import parse_bool
+    AGENT_BIND_SECRET_TOKEN,
+    AGENT_BIND_CHECK_INTERVAL)
 from .browser_pool import BrowserPool
 from .api.agent_server import start_server
 
@@ -55,7 +55,7 @@ async def agent_main(args):
         ASV.node_name = args.node_name
         ASV.advertise_address = args.advertise_address
         ASV.browser_pool = BrowserPool()
-        ASV.is_steady = parse_bool(args.is_steady)
+        ASV.is_steady = args.is_steady
         start_server()
 
         await bind_self_to_agent_slot()
@@ -70,16 +70,16 @@ async def agent_main(args):
 
 async def bind_self_to_agent_slot():
     cryptor = fernet.Fernet(AGENT_BIND_SECRET_TOKEN)
-    bind_token = cryptor.encrypt(b'Geppytto').decode('utf-8')
     while ASV.running:
-
+        # Token has ttl check, so regenerate every time
+        bind_token = cryptor.encrypt(b'Geppytto').decode('utf-8')
         free_agent_slot = await (
             ASV.api_client.bind_to_free_slot(
                 ASV.advertise_address, ASV.is_steady, bind_token))
         agent_info = free_agent_slot['data']
         if agent_info is None:
             logger.info('No free agent slot ...')
-            await asyncio.sleep(6)
+            await asyncio.sleep(AGENT_BIND_CHECK_INTERVAL)
             continue
 
         ASV.agent_id = agent_info['id']
@@ -115,12 +115,10 @@ async def teardown_process():
     logger.info('Tearing down...')
     ASV.server_task.cancel()
     await ASV.api_client.delete_browser_agent_map(agent_id=ASV.agent_id)
-    print('is_steady', ASV.is_steady)
-    if not ASV.is_steady:
-        ret = await ASV.api_client.remove_agent(
-            agent_id=ASV.agent_id,
-            user_id=ASV.user_id,
-            is_steady=False)
+    await ASV.api_client.remove_agent(
+        agent_id=ASV.agent_id,
+        user_id=ASV.user_id,
+        is_steady=ASV.is_steady)
 
     await ASV.api_client.close()
 
