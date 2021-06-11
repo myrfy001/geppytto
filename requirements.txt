@@ -28,7 +28,7 @@ typed-ast==1.1.0
 ujson==1.35
 urllib3==1.24.1
 uvloop==0.11.3
-websockets==5.0.1
+websockets==9.1
 wrapt==1.10.11
 xvfbwrapper==0.2.9
 yarl==1.2.6
