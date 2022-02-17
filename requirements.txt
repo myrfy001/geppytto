@@ -21,7 +21,7 @@ pycodestyle==2.4.0
 pyee==5.0.0
 pylint==2.1.1
 pyppeteer==0.0.25
-sanic==0.8.3
+sanic==20.12.6
 six==1.11.0
 tqdm==4.28.1
 typed-ast==1.1.0
